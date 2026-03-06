@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  // Colores principales
-  static const Color primary = Color(0xFFDC0032);
-  static const Color secondary = Color(0xFFFFFFFF);
+  // Colores principales del diseño Figma
+  static const Color primary = Color(0xFFDC0032); // Rojo MARCA GOL
+  static const Color secondary = Color(0xFFFFD700); // Amarillo botones
+  static const Color accent = Color(0xFFFFC107); // Amarillo "Ver Más Live"
   
-  // Colores de fondo
-  static const Color background = Color(0xFF1A1A1A);
-  static const Color surface = Color(0xFF2A2A2A);
-  static const Color bottomNavBackground = Color(0xFF0D0D0D);
+  // Colores de fondo (ahora claro)
+  static const Color background = Color(0xFFF5F5F5); // Gris muy claro
+  static const Color surface = Color(0xFFFFFFFF); // Blanco
+  static const Color cardBackground = Color(0xFFFFFFFF); // Blanco
   
-  // Colores de acento
+  // Colores de texto
+  static const Color textPrimary = Color(0xFF000000);
+  static const Color textSecondary = Color(0xFF666666);
+  static const Color textTertiary = Color(0xFF999999);
+  
+  // Estado Live
+  static const Color liveGreen = Color(0xFF4CAF50);
   static const Color liveRed = Color(0xFFFF4444);
-  static const Color success = Colors.green;
-  static const Color error = Colors.red;
-  static const Color warning = Colors.orange;
   
-  // Gradientes
+  // Gradientes (por si se necesitan)
   static const LinearGradient primaryGradient = LinearGradient(
     colors: [Color(0xFFDC0032), Color(0xFF8B0020)],
-  );
-  
-  static const LinearGradient inactiveGradient = LinearGradient(
-    colors: [Color(0xFF3A3A3A), Color(0xFF2A2A2A)],
   );
 }

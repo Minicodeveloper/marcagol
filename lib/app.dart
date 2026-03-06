@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'core/theme/app_theme.dart';
-import 'shared/navigation/main_screen.dart';
+import 'features/home/presentation/screens/new_home_screen.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -8,10 +8,10 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'MarcaGol',
+      title: 'Marca Gol',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      home: const MainScreen(),
+      theme: AppTheme.lightTheme, // Nuevo tema claro
+      home: const NewHomeScreen(), // Nueva pantalla
     );
   }
 }

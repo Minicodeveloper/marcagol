@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "879833296604",
+    "project_id": "marcagol2026",
+    "storage_bucket": "marcagol2026.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:879833296604:android:1251bf9035dbd47ed94e19",
+        "android_client_info": {
+          "package_name": "com.marcagol.marca_gol"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBSL_JQt8mgeKv98dD1CRjbnPovexh89eU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

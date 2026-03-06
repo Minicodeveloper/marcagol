@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../features/home/presentation/screens/home_screen.dart';
-import '../../features/live/presentation/screens/live_screen.dart';
-import '../../features/bets/presentation/screens/bets_screen.dart';
+import '../../core/constants/app_colors.dart';
+import '../../features/home/presentation/screens/new_home_screen.dart';
 import '../../features/pools/presentation/screens/pool_betting_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 
@@ -16,43 +15,53 @@ class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
   final List<Widget> _screens = const [
-    HomeScreen(),
-    LiveScreen(),
-    BetsScreen(),
-    PoolBettingScreen(),
-    ProfileScreen(),
+    NewHomeScreen(),        // Home con tabs horizontales
+    PoolBettingScreen(),    // Cartillas (antes "Pozos")
+    ProfileScreen(),        // Perfil
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: _screens[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Inicio',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.play_circle_filled),
-            label: 'En Vivo',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.handshake),
-            label: 'Apuestas',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.pool),
-            label: 'Pozos',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Perfil',
-          ),
-        ],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _selectedIndex,
+          onTap: (index) => setState(() => _selectedIndex = index),
+          backgroundColor: AppColors.surface,
+          selectedItemColor: AppColors.primary,
+          unselectedItemColor: AppColors.textSecondary,
+          type: BottomNavigationBarType.fixed,
+          elevation: 0,
+          selectedFontSize: 12,
+          unselectedFontSize: 12,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home),
+              label: 'Inicio',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.sports_soccer_outlined),
+              activeIcon: Icon(Icons.sports_soccer),
+              label: 'Cartillas',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline),
+              activeIcon: Icon(Icons.person),
+              label: 'Perfil',
+            ),
+          ],
+        ),
       ),
     );
   }
