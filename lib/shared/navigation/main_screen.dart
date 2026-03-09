@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../features/home/presentation/screens/new_home_screen.dart';
 import '../../features/pools/presentation/screens/pool_betting_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 
-class MainScreen extends StatefulWidget {
+class MainScreen extends ConsumerStatefulWidget {
   const MainScreen({super.key});
 
   @override
-  State<MainScreen> createState() => _MainScreenState();
+  ConsumerState<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends ConsumerState<MainScreen> {
   int _selectedIndex = 0;
 
   final List<Widget> _screens = const [
-    NewHomeScreen(),        // Home con tabs horizontales
-    PoolBettingScreen(),    // Cartillas (antes "Pozos")
-    ProfileScreen(),        // Perfil
+    NewHomeScreen(),
+    PoolBettingScreen(),
+    ProfileScreen(),
   ];
 
   @override
@@ -26,9 +27,10 @@ class _MainScreenState extends State<MainScreen> {
       body: _screens[_selectedIndex],
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
+          color: AppColors.surface,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 10,
               offset: const Offset(0, -2),
             ),
@@ -39,11 +41,9 @@ class _MainScreenState extends State<MainScreen> {
           onTap: (index) => setState(() => _selectedIndex = index),
           backgroundColor: AppColors.surface,
           selectedItemColor: AppColors.primary,
-          unselectedItemColor: AppColors.textSecondary,
+          unselectedItemColor: AppColors.textTertiary,
           type: BottomNavigationBarType.fixed,
           elevation: 0,
-          selectedFontSize: 12,
-          unselectedFontSize: 12,
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined),
@@ -51,8 +51,8 @@ class _MainScreenState extends State<MainScreen> {
               label: 'Inicio',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.sports_soccer_outlined),
-              activeIcon: Icon(Icons.sports_soccer),
+              icon: Icon(Icons.receipt_long_outlined),
+              activeIcon: Icon(Icons.receipt_long),
               label: 'Cartillas',
             ),
             BottomNavigationBarItem(

@@ -51,7 +51,7 @@ class RadioControls extends StatelessWidget {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.primary.withOpacity(0.4),
+                      color: AppColors.primary.withValues(alpha: 0.4),
                       blurRadius: 20,
                       offset: const Offset(0, 8),
                     ),
@@ -125,7 +125,7 @@ class RadioControls extends StatelessWidget {
                 color: AppColors.secondary,
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.secondary.withOpacity(0.5),
+                    color: AppColors.secondary.withValues(alpha: 0.5),
                     blurRadius: 10,
                   ),
                 ],
@@ -142,7 +142,7 @@ class RadioControls extends StatelessWidget {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.secondary.withOpacity(0.5),
+                    color: AppColors.secondary.withValues(alpha: 0.5),
                     blurRadius: 8,
                   ),
                 ],
@@ -168,12 +168,12 @@ class RadioControls extends StatelessWidget {
           color: Colors.white,
           shape: BoxShape.circle,
           border: Border.all(
-            color: AppColors.textSecondary.withOpacity(0.2),
+            color: AppColors.textSecondary.withValues(alpha: 0.2),
             width: 2,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),

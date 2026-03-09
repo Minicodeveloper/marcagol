@@ -1,186 +1,141 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/providers/providers.dart';
+import '../../../../core/services/firestore_service.dart';
 
-class PoolDetailScreen extends StatefulWidget {
-  final String poolId;
+class PoolDetailScreen extends ConsumerStatefulWidget {
+  final String ballotId;
 
-  const PoolDetailScreen({super.key, required this.poolId});
+  const PoolDetailScreen({super.key, required this.ballotId});
 
   @override
-  State<PoolDetailScreen> createState() => _PoolDetailScreenState();
+  ConsumerState<PoolDetailScreen> createState() => _PoolDetailScreenState();
 }
 
-class _PoolDetailScreenState extends State<PoolDetailScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  
-  final Map<int, String> _predictions = {};
-
-  final List<Map<String, String>> _matches = [
-    {'home': 'I.E.I Santos Toribio', 'away': 'Equipo A'},
-    {'home': 'Mencuri F.C.', 'away': 'Equipo B'},
-    {'home': 'I.E. María Natividad', 'away': 'Equipo C'},
-    {'home': 'I.E. Nueva Cultura', 'away': 'Equipo D'},
-    {'home': 'I.E. Rosado Benito', 'away': 'Equipo E'},
-    {'home': 'Deportivo Unidos', 'away': 'Equipo F'},
-    {'home': 'Alianza FC', 'away': 'Equipo G'},
-    {'home': 'Sport Chavelines', 'away': 'Equipo H'},
-    {'home': 'Real Academia', 'away': 'Equipo I'},
-    {'home': 'Los Tigres', 'away': 'Equipo J'},
-    {'home': 'Juventud FC', 'away': 'Equipo K'},
-    {'home': 'Cultural Andino', 'away': 'Equipo L'},
-    {'home': 'Unión Deportiva', 'away': 'Equipo M'},
-    {'home': 'Sporting Club', 'away': 'Equipo N'},
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
+class _PoolDetailScreenState extends ConsumerState<PoolDetailScreen> {
+  final Map<String, String> _predictions = {};
+  // For score mode: each key maps to "homeScore-awayScore"
+  final Map<String, TextEditingController> _homeScoreControllers = {};
+  final Map<String, TextEditingController> _awayScoreControllers = {};
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
-    _tabController.dispose();
+    for (final c in _homeScoreControllers.values) {
+      c.dispose();
+    }
+    for (final c in _awayScoreControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Row(
-          children: [
-            Container(
-              width: 32,
+    final ballotAsync = ref.watch(ballotByIdProvider(widget.ballotId));
+
+    return ballotAsync.when(
+      data: (ballot) {
+        if (ballot == null) {
+          return Scaffold(
+            backgroundColor: AppColors.background,
+            appBar: AppBar(title: const Text('Cartilla')),
+            body: const Center(child: Text('Cartilla no encontrada')),
+          );
+        }
+
+        final matches = List<Map<String, dynamic>>.from(ballot['matches'] ?? []);
+        final mode = ballot['mode'] ?? 'result';
+        final prizePool = (ballot['prizePool'] as num?)?.toDouble() ?? 0;
+        final title = ballot['title'] ?? 'Cartilla';
+        final totalMatches = matches.length;
+
+        return Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: AppBar(
+            title: Image.asset(
+              'assets/images/logo.png',
               height: 32,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Center(
-                child: Text(
-                  'MG',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+              fit: BoxFit.contain,
+            ),
+            actions: [
+              Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _predictions.length == totalMatches ? Colors.green : AppColors.secondary,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${_predictions.length}/$totalMatches',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'MARCA GOL',
-              style: TextStyle(fontSize: 16),
-            ),
-          ],
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: _predictions.length == 14 ? Colors.green : AppColors.secondary,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '${_predictions.length}/14',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
+            ],
+          ),
+          body: SingleChildScrollView(
+            child: Column(
+              children: [
+                // Promo banner
+                _buildPromoBanner(title),
+                _buildHowToWinButton(mode),
+                _buildPrizeSection(prizePool),
+
+                // Mode indicator
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  color: AppColors.accent.withValues(alpha: 0.1),
+                  child: Text(
+                    mode == 'result'
+                        ? '📋 Modalidad: Por Resultado (Local / Empate / Visita)'
+                        : '⚽ Modalidad: Por Marcador Exacto',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.accent,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-              ),
+
+                // Table header
+                if (mode == 'result') _buildResultTableHeader(),
+
+                // Matches list
+                _buildMatchesList(matches, mode),
+
+                // Submit button
+                _buildSubmitButton(mode, totalMatches),
+
+                const SizedBox(height: 100),
+              ],
             ),
           ),
-        ],
+        );
+      },
+      loading: () => Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(title: const Text('Cargando...')),
+        body: const Center(child: CircularProgressIndicator()),
       ),
-      body: SingleChildScrollView( // ← SCROLL COMPLETO
-        child: Column(
-          children: [
-            _buildPromoBanner(),
-            _buildHowToWinButton(),
-            _buildPrizeSection(),
-
-            // Tabs
-            Container(
-              color: AppColors.surface,
-              child: TabBar(
-                controller: _tabController,
-                tabs: const [
-                  Tab(text: 'Marcar'),
-                  Tab(text: 'Por números'),
-                ],
-              ),
-            ),
-
-            // Logo
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'MG',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'MARCA GOL',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Headers
-            _buildTableHeader(),
-
-            // Lista de 14 equipos
-            _buildMatchesList(),
-
-            // Botón Enviar
-            _buildSubmitButton(),
-
-            const SizedBox(height: 24),
-
-            // NUEVA SECCIÓN: Detalle de partidos por liga
-            _buildMatchDetailsByLeague(),
-
-            const SizedBox(height: 100), // Espacio al final
-          ],
-        ),
+      error: (e, _) => Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(title: const Text('Error')),
+        body: Center(child: Text('Error: $e')),
       ),
     );
   }
 
-  Widget _buildPromoBanner() {
+  Widget _buildPromoBanner(String title) {
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFDC0032), Color(0xFF8B0020)],
-        ),
+        gradient: AppColors.orangeGradient,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -188,25 +143,22 @@ class _PoolDetailScreenState extends State<PoolDetailScreen>
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Text(
-                  '¡PARTICIPA EN NUESTRA CARTILLA GRATUITA!',
-                  style: TextStyle(
+                  title.toUpperCase(),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                SizedBox(height: 4),
-                Text(
+                const SizedBox(height: 4),
+                const Text(
                   '¡DEMUESTRA QUE ERES EL QUE MÁS SABE DE FÚTBOL!',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: Colors.white, fontSize: 11),
                 ),
-                SizedBox(height: 8),
-                Text(
+                const SizedBox(height: 8),
+                const Text(
                   '¡GANA EL GRAN POZO ACUMULADO!',
                   style: TextStyle(
                     color: Color(0xFFFFD700),
@@ -218,87 +170,62 @@ class _PoolDetailScreenState extends State<PoolDetailScreen>
             ),
           ),
           const SizedBox(width: 12),
-          // TODO: Reemplazar con imagen real
           Container(
             width: 50,
             height: 50,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(
-              Icons.sports_soccer,
-              color: Colors.white,
-              size: 30,
-            ),
+            child: const Icon(Icons.sports_soccer, color: Colors.white, size: 30),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHowToWinButton() {
+  Widget _buildHowToWinButton(String mode) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: ElevatedButton(
-        onPressed: _showHowToWinDialog,
+        onPressed: () => _showHowToWinDialog(mode),
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.secondary,
+          backgroundColor: AppColors.accent,
           foregroundColor: Colors.black,
           minimumSize: const Size(double.infinity, 45),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
-        child: const Text(
-          '¿Cómo Ganar?',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        child: const Text('¿Cómo Ganar?',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
       ),
     );
   }
 
-  Widget _buildPrizeSection() {
+  Widget _buildPrizeSection(double prizePool) {
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
-        ),
+        gradient: AppColors.goldGradient,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         children: [
-          // TODO: Reemplazar con imagen real de monedas
           Container(
             width: 80,
             height: 60,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.3),
+              color: Colors.white.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(
-              Icons.monetization_on,
-              size: 40,
-              color: Colors.white,
-            ),
+            child: const Icon(Icons.monetization_on, size: 40, color: Colors.white),
           ),
           const SizedBox(height: 12),
-          const Text(
-            '¡GANA EL MONTO DE',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
-          const Text(
-            '500 SOLES!',
-            style: TextStyle(
+          const Text('¡GANA EL MONTO DE',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
+          Text(
+            'S/ ${prizePool.toStringAsFixed(0)}!',
+            style: const TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.bold,
               color: Color(0xFFDC0032),
@@ -309,7 +236,7 @@ class _PoolDetailScreenState extends State<PoolDetailScreen>
     );
   }
 
-  Widget _buildTableHeader() {
+  Widget _buildResultTableHeader() {
     return Container(
       color: AppColors.primary,
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
@@ -317,19 +244,10 @@ class _PoolDetailScreenState extends State<PoolDetailScreen>
         children: [
           const SizedBox(width: 24),
           const SizedBox(width: 12),
-          Expanded(
-            flex: 3,
-            child: Container(),
-          ),
-          Expanded(
-            child: _buildHeaderCell('LOCAL'),
-          ),
-          Expanded(
-            child: _buildHeaderCell('EMPATE'),
-          ),
-          Expanded(
-            child: _buildHeaderCell('VISITA'),
-          ),
+          Expanded(flex: 3, child: Container()),
+          Expanded(child: _buildHeaderCell('LOCAL')),
+          Expanded(child: _buildHeaderCell('EMPATE')),
+          Expanded(child: _buildHeaderCell('VISITA')),
         ],
       ),
     );
@@ -337,91 +255,193 @@ class _PoolDetailScreenState extends State<PoolDetailScreen>
 
   Widget _buildHeaderCell(String text) {
     return Center(
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
+      child: Text(text,
+          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
     );
   }
 
-  Widget _buildMatchesList() {
+  Widget _buildMatchesList(List<Map<String, dynamic>> matches, String mode) {
     return Column(
-      children: List.generate(_matches.length, (index) {
-        final match = _matches[index];
-        final prediction = _predictions[index];
+      children: List.generate(matches.length, (index) {
+        final match = matches[index];
+        final key = '$index';
+        final prediction = _predictions[key];
 
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: prediction != null ? AppColors.primary : Colors.grey.withOpacity(0.3),
-              width: prediction != null ? 2 : 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: prediction != null ? AppColors.primary : Colors.grey,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    '${index + 1}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 3,
-                child: Text(
-                  match['home']!,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Expanded(
-                child: _buildCheckbox(index, 'LOCAL', prediction),
-              ),
-              Expanded(
-                child: _buildCheckbox(index, 'EMPATE', prediction),
-              ),
-              Expanded(
-                child: _buildCheckbox(index, 'VISITA', prediction),
-              ),
-            ],
-          ),
-        );
+        if (mode == 'result') {
+          return _buildResultMatchRow(match, index, key, prediction);
+        } else {
+          return _buildScoreMatchRow(match, index, key);
+        }
       }),
     );
   }
 
-  Widget _buildCheckbox(int index, String option, String? currentPrediction) {
+  Widget _buildResultMatchRow(Map<String, dynamic> match, int index, String key, String? prediction) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: prediction != null ? AppColors.primary : Colors.grey.withValues(alpha: 0.3),
+          width: prediction != null ? 2 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: prediction != null ? AppColors.primary : Colors.grey,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text('${index + 1}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  match['homeTeam'] ?? '',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  'vs ${match['awayTeam'] ?? ''}',
+                  style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: _buildCheckbox(key, 'LOCAL', prediction)),
+          Expanded(child: _buildCheckbox(key, 'EMPATE', prediction)),
+          Expanded(child: _buildCheckbox(key, 'VISITA', prediction)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreMatchRow(Map<String, dynamic> match, int index, String key) {
+    _homeScoreControllers.putIfAbsent(key, () => TextEditingController());
+    _awayScoreControllers.putIfAbsent(key, () => TextEditingController());
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _predictions.containsKey(key) ? AppColors.primary : Colors.grey.withValues(alpha: 0.3),
+          width: _predictions.containsKey(key) ? 2 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: _predictions.containsKey(key) ? AppColors.primary : Colors.grey,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text('${index + 1}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              match['homeTeam'] ?? '',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          SizedBox(
+            width: 40,
+            height: 36,
+            child: TextField(
+              controller: _homeScoreControllers[key],
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              decoration: InputDecoration(
+                hintText: '0',
+                contentPadding: EdgeInsets.zero,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+              onChanged: (v) => _updateScorePrediction(key),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4),
+            child: Text('-', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+          SizedBox(
+            width: 40,
+            height: 36,
+            child: TextField(
+              controller: _awayScoreControllers[key],
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              decoration: InputDecoration(
+                hintText: '0',
+                contentPadding: EdgeInsets.zero,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+              onChanged: (v) => _updateScorePrediction(key),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              match['awayTeam'] ?? '',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _updateScorePrediction(String key) {
+    final home = _homeScoreControllers[key]?.text ?? '';
+    final away = _awayScoreControllers[key]?.text ?? '';
+    if (home.isNotEmpty && away.isNotEmpty) {
+      setState(() {
+        _predictions[key] = '$home-$away';
+      });
+    } else {
+      setState(() {
+        _predictions.remove(key);
+      });
+    }
+  }
+
+  Widget _buildCheckbox(String key, String option, String? currentPrediction) {
     final isSelected = currentPrediction == option;
 
     return Center(
       child: GestureDetector(
         onTap: () {
           setState(() {
-            _predictions[index] = option;
+            _predictions[key] = option;
           });
         },
         child: Container(
@@ -436,290 +456,145 @@ class _PoolDetailScreenState extends State<PoolDetailScreen>
             borderRadius: BorderRadius.circular(4),
           ),
           child: isSelected
-              ? const Icon(
-                  Icons.check,
-                  size: 14,
-                  color: Colors.white,
-                )
+              ? const Icon(Icons.check, size: 14, color: Colors.white)
               : null,
         ),
       ),
     );
   }
 
-  Widget _buildSubmitButton() {
-    final isComplete = _predictions.length == 14;
+  Widget _buildSubmitButton(String mode, int totalMatches) {
+    final isComplete = _predictions.length == totalMatches;
 
     return Padding(
       padding: const EdgeInsets.all(16),
       child: ElevatedButton(
-        onPressed: isComplete ? _submitBallot : null,
+        onPressed: isComplete && !_isSubmitting ? () => _submitBallot(mode) : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: isComplete ? AppColors.primary : Colors.grey[400],
           foregroundColor: Colors.white,
           minimumSize: const Size(double.infinity, 50),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
-        child: Text(
-          isComplete ? 'Enviar' : 'COMPLETA LOS 14 (${_predictions.length}/14)',
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        child: _isSubmitting
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+              )
+            : Text(
+                isComplete ? 'ENVIAR CARTILLA' : 'COMPLETA LOS $totalMatches (${_predictions.length}/$totalMatches)',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
       ),
     );
   }
 
-  // ============ NUEVA SECCIÓN: DETALLE DE PARTIDOS ============
-  Widget _buildMatchDetailsByLeague() {
-    return Column(
-      children: [
-        // Banner "DETALLE DE LOS PARTIDOS POR LIGA"
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFDC0032), Color(0xFF8B0020)],
-            ),
-            borderRadius: BorderRadius.circular(0),
-          ),
-          child: Stack(
-            children: [
-              // TODO: Agregar imagen de fondo (patron diagonal)
-              Center(
-                child: Column(
-                  children: const [
-                    Text(
-                      'DETALLE DE LOS',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1,
+  Future<void> _submitBallot(String mode) async {
+    setState(() => _isSubmitting = true);
+    
+    try {
+      final service = FirestoreService();
+      final code = await service.submitBallotEntry(
+        ballotId: widget.ballotId,
+        predictions: _predictions,
+        mode: mode,
+      );
+      
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.surface,
+            title: const Text('✅ ¡Cartilla Confirmada!'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Tu cartilla ha sido registrada exitosamente.', textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.secondary.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    children: [
+                      const Text('Código de Participación', style: TextStyle(fontSize: 12)),
+                      const SizedBox(height: 8),
+                      Text(
+                        code,
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                        ),
                       ),
-                    ),
-                    Text(
-                      'PARTIDOS POR LIGA',
-                      style: TextStyle(
-                        color: Color(0xFFFFD700),
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+              ],
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+                child: const Text('¡Listo!'),
               ),
             ],
           ),
-        ),
-
-        const SizedBox(height: 24),
-
-        // ELIMINATORIA 2026
-        _buildLeagueSection(
-          'ELIMINATORIA 2026',
-          [
-            {'home': 'Ancile De', 'away': 'Seco Oliveros'},
-            {'home': 'El Buen Pastor', 'away': 'Colegio Aleph'},
-            {'home': 'Innova Schools', 'away': 'I.E. Rosa Merino'},
-            {'home': 'Colegio Guadalupe', 'away': 'I.E. Rosa Merino'},
-          ],
-        ),
-
-        const SizedBox(height: 24),
-
-        // ELIMINATORIA 2024
-        _buildLeagueSection(
-          'ELIMINATORIA 2024',
-          [
-            {'home': 'Ancile De', 'away': 'Seco Oliveros'},
-            {'home': 'El Buen Pastor', 'away': 'Colegio Aleph'},
-            {'home': 'Innova Schools', 'away': 'I.E. Rosa Merino'},
-            {'home': 'Colegio Guadalupe', 'away': 'I.E. Rosa Merino'},
-          ],
-        ),
-
-        const SizedBox(height: 24),
-
-        // Puedes agregar más eliminatorias aquí
-      ],
-    );
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
-  Widget _buildLeagueSection(String leagueName, List<Map<String, String>> matches) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Título de la liga
-          Text(
-            leagueName,
-            style: const TextStyle(
-              color: AppColors.primary,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Lista de partidos
-          ...matches.map((match) => _buildMatchDetail(match)).toList(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMatchDetail(Map<String, String> match) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              match['home']!,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              'VS',
-              style: TextStyle(
-                color: AppColors.primary,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              match['away']!,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-              textAlign: TextAlign.right,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _submitBallot() {
-    final code = 'CART-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
-
+  void _showHowToWinDialog(String mode) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('✅ ¡Cartilla Confirmada!'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Tu cartilla ha sido registrada exitosamente.',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.secondary.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                children: [
-                  const Text(
-                    'Código de Participación',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    code,
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text('Cerrar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-            ),
-            child: const Text('Compartir'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showHowToWinDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: const Text('¿Cómo Ganar?'),
-        content: const SingleChildScrollView(
+        content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('1. Selecciona el resultado de los 14 partidos', style: TextStyle(fontSize: 13)),
-              SizedBox(height: 8),
-              Text('2. Marca LOCAL, EMPATE o VISITA para cada partido', style: TextStyle(fontSize: 13)),
-              SizedBox(height: 8),
-              Text('3. Confirma tu cartilla antes del cierre', style: TextStyle(fontSize: 13)),
-              SizedBox(height: 8),
-              Text(
-                '4. ¡Si aciertas los 14 resultados, ganas el pozo completo!',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primary),
-              ),
+              if (mode == 'result') ...[
+                const Text('1. Marca LOCAL, EMPATE o VISITA para cada partido', style: TextStyle(fontSize: 13)),
+                const SizedBox(height: 8),
+                const Text('2. Debes completar los 14 partidos', style: TextStyle(fontSize: 13)),
+                const SizedBox(height: 8),
+                const Text('3. Si aciertas los 14 resultados, ¡ganas el pozo!', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primary)),
+              ] else ...[
+                const Text('1. Ingresa el marcador exacto de cada partido', style: TextStyle(fontSize: 13)),
+                const SizedBox(height: 8),
+                const Text('2. Debes completar los 14 marcadores', style: TextStyle(fontSize: 13)),
+                const SizedBox(height: 8),
+                const Text('3. Si aciertas los 14 marcadores, ¡ganas el pozo!', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primary)),
+              ],
+              const SizedBox(height: 12),
+              const Text('4. Si hay varios ganadores, el pozo se divide entre todos', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
             ],
           ),
         ),
         actions: [
           ElevatedButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(ctx),
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
             child: const Text('Entendido'),
           ),

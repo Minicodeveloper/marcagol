@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/live_tab_content.dart';
 import '../widgets/teams_tab_content.dart';
 import '../widgets/calendar_tab_content.dart';
 
-/// Pantalla principal con diseño Figma
-class NewHomeScreen extends StatefulWidget {
+class NewHomeScreen extends ConsumerStatefulWidget {
   const NewHomeScreen({super.key});
 
   @override
-  State<NewHomeScreen> createState() => _NewHomeScreenState();
+  ConsumerState<NewHomeScreen> createState() => _NewHomeScreenState();
 }
 
-class _NewHomeScreenState extends State<NewHomeScreen>
+class _NewHomeScreenState extends ConsumerState<NewHomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
@@ -36,23 +36,23 @@ class _NewHomeScreenState extends State<NewHomeScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // Header personalizado
             const CustomAppBar(),
-
-            // Tabs horizontales
+            // Tab bar
             Container(
               color: AppColors.surface,
               child: TabBar(
                 controller: _tabController,
+                labelColor: AppColors.primary,
+                unselectedLabelColor: AppColors.textSecondary,
+                indicatorColor: AppColors.primary,
+                indicatorWeight: 3,
                 tabs: const [
                   Tab(text: 'Live'),
                   Tab(text: 'Equipos'),
-                  Tab(text: 'Calendario'),
+                  Tab(text: 'Historial'),
                 ],
               ),
             ),
-
-            // Contenido de tabs
             Expanded(
               child: TabBarView(
                 controller: _tabController,

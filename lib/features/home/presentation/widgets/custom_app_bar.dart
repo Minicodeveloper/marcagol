@@ -1,116 +1,104 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../pools/presentation/screens/pool_detail_screen.dart';
+import '../../../../core/providers/providers.dart';
+import '../../../auth/presentation/screens/login_screen.dart';
+import '../../../pools/presentation/screens/pool_betting_screen.dart';
 
-class CustomAppBar extends StatelessWidget {
+class CustomAppBar extends ConsumerWidget {
   const CustomAppBar({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isLoggedIn = ref.watch(isLoggedInProvider);
+
     return Container(
-      color: AppColors.surface,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Row(
         children: [
-          // Logo MARCA GOL
-          Row(
-            children: [
-              // TODO: Reemplazar con imagen real del logo
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Center(
-                  child: Text(
-                    'MG',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'MARCA GOL',
-                style: TextStyle(
-                  color: AppColors.primary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
+          // Logo original
+          Image.asset(
+            'assets/images/logo.png',
+            height: 40,
+            fit: BoxFit.contain,
           ),
-
           const Spacer(),
-
-          // Botón JUEGA AHORA (amarillo) → Va a cartilla
+          // Play now button
           Container(
             decoration: BoxDecoration(
-              color: AppColors.secondary,
-              borderRadius: BorderRadius.circular(20),
+              gradient: AppColors.orangeGradient,
+              borderRadius: BorderRadius.circular(8),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.secondary.withOpacity(0.3),
+                  color: AppColors.accent.withValues(alpha: 0.3),
                   blurRadius: 8,
-                  offset: const Offset(0, 2),
+                  offset: const Offset(0, 3),
                 ),
               ],
             ),
             child: Material(
               color: Colors.transparent,
               child: InkWell(
+                borderRadius: BorderRadius.circular(8),
                 onTap: () {
-                  // Navegar DIRECTO a la cartilla
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (context) => const PoolDetailScreen(poolId: 'CART-001'),
-                    ),
+                    MaterialPageRoute(builder: (_) => const PoolBettingScreen()),
                   );
                 },
-                borderRadius: BorderRadius.circular(20),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(
-                        Icons.sports_soccer,
-                        color: Colors.black,
-                        size: 16,
-                      ),
-                      SizedBox(width: 6),
-                      Text(
-                        'JUEGA AHORA',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Text(
+                    'JUEGA AHORA',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-
-          const SizedBox(width: 12),
-
-          // Ícono de perfil/login
-          IconButton(
-            onPressed: () {
-              // TODO: Ir a perfil o login
+          const SizedBox(width: 8),
+          // Profile/Login icon
+          GestureDetector(
+            onTap: () {
+              if (!isLoggedIn) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                );
+              }
             },
-            icon: const Icon(
-              Icons.account_circle,
-              size: 28,
-              color: AppColors.textPrimary,
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: isLoggedIn
+                    ? AppColors.liveGreen.withValues(alpha: 0.1)
+                    : AppColors.background,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isLoggedIn ? AppColors.liveGreen : Colors.grey.shade300,
+                ),
+              ),
+              child: Icon(
+                isLoggedIn ? Icons.person : Icons.login,
+                size: 20,
+                color: isLoggedIn ? AppColors.liveGreen : AppColors.textSecondary,
+              ),
             ),
           ),
         ],

@@ -25,7 +25,7 @@ class SoundWave extends StatelessWidget {
             width: 2,
             height: isPlaying ? height : 2,
             decoration: BoxDecoration(
-              color: AppColors.textSecondary.withOpacity(0.3),
+              color: AppColors.textSecondary.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           );

@@ -4,10 +4,17 @@ import '../widgets/sound_wave.dart';
 import '../widgets/radio_dial.dart';
 import '../widgets/radio_controls.dart';
 
-/// Pantalla de Radio FM
-/// TODO: Integrar con servicio de streaming real
 class RadioScreen extends StatefulWidget {
-  const RadioScreen({super.key});
+  final String? streamUrl;
+  final String? title;
+  final double? frequency;
+
+  const RadioScreen({
+    super.key,
+    this.streamUrl,
+    this.title,
+    this.frequency,
+  });
 
   @override
   State<RadioScreen> createState() => _RadioScreenState();
@@ -15,78 +22,100 @@ class RadioScreen extends StatefulWidget {
 
 class _RadioScreenState extends State<RadioScreen> {
   bool _isPlaying = false;
-  double _frequency = 107.7;
+  double _currentFrequency = 107.7;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.frequency != null) {
+      _currentFrequency = widget.frequency!;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Row(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Center(
-                child: Text(
-                  'MG',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Text('MARCA GOL', style: TextStyle(fontSize: 16)),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () {
-              // TODO: Mostrar opciones
-            },
-          ),
-        ],
+        title: Text(widget.title ?? 'Radio'),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
       ),
       body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Spacer(),
+          const SizedBox(height: 20),
 
-          // Onda de sonido
+          // Station name
+          if (widget.title != null)
+            Text(
+              widget.title!,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+
+          const SizedBox(height: 20),
+
+          // Sound wave animation
           SoundWave(isPlaying: _isPlaying),
 
-          const SizedBox(height: 40),
+          const SizedBox(height: 30),
 
-          // Dial con frecuencia
-          RadioDial(frequency: _frequency),
+          // Radio dial
+          RadioDial(frequency: _currentFrequency),
 
-          const SizedBox(height: 60),
+          const SizedBox(height: 30),
 
-          // Controles
+          // Connection status
+          if (widget.streamUrl != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: _isPlaying
+                    ? AppColors.liveGreen.withValues(alpha: 0.1)
+                    : AppColors.textTertiary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _isPlaying ? Icons.wifi : Icons.wifi_off,
+                    size: 16,
+                    color: _isPlaying ? AppColors.liveGreen : AppColors.textTertiary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _isPlaying ? 'Conectado' : 'Desconectado',
+                    style: TextStyle(
+                      color: _isPlaying ? AppColors.liveGreen : AppColors.textTertiary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          const SizedBox(height: 30),
+
+          // Controls
           RadioControls(
             isPlaying: _isPlaying,
             onPlayPause: () {
               setState(() {
                 _isPlaying = !_isPlaying;
               });
-              // TODO: Reproducir/pausar radio
+              // TODO: Integrate with actual audio player using widget.streamUrl
             },
-            onBackward: () {
-              // TODO: Retroceder 15 segundos
-            },
-            onForward: () {
-              // TODO: Adelantar 30 segundos
-            },
+            onBackward: () {},
+            onForward: () {},
           ),
 
-          const Spacer(),
+          const SizedBox(height: 20),
         ],
       ),
     );
