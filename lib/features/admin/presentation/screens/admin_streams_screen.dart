@@ -32,7 +32,7 @@ class AdminStreamsScreen extends ConsumerWidget {
           ),
         ),
         floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => _showCreateStreamDialog(context),
+          onPressed: () => _showCreateStreamDialog(context, ref),
           backgroundColor: AppColors.adminOrange,
           icon: const Icon(Icons.add),
           label: const Text('Nueva Transmisión'),
@@ -198,17 +198,25 @@ class AdminStreamsScreen extends ConsumerWidget {
     }
   }
 
-  void _showCreateStreamDialog(BuildContext context) {
+  void _showCreateStreamDialog(BuildContext context, WidgetRef ref) {
     final titleCtrl = TextEditingController();
     final urlCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     final freqCtrl = TextEditingController();
     String selectedType = 'video';
+    String? selectedMatchId;
+
+    final activeChampionship = ref.read(activeChampionshipProvider).valueOrNull;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
+        builder: (ctx, setDialogState) {
+          final matches = activeChampionship != null 
+              ? ref.watch(matchesByChampionshipProvider(activeChampionship['id'])).valueOrNull ?? []
+              : [] as List<Map<String, dynamic>>;
+
+          return AlertDialog(
           title: const Text('Nueva Transmisión'),
           content: SingleChildScrollView(
             child: Column(
@@ -261,6 +269,25 @@ class AdminStreamsScreen extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
+                
+                // Match selector (Optional)
+                if (matches.isNotEmpty)
+                  DropdownButtonFormField<String?>(
+                    value: selectedMatchId,
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Global (Sin partido)')),
+                      ...matches.map((m) => DropdownMenuItem(
+                        value: m['id'],
+                        child: Text('${m['homeTeam']} vs ${m['awayTeam']}', 
+                                    style: const TextStyle(fontSize: 12),
+                                    overflow: TextOverflow.ellipsis),
+                      )),
+                    ],
+                    onChanged: (val) => setDialogState(() => selectedMatchId = val),
+                    decoration: const InputDecoration(labelText: 'Vincular a Partido'),
+                  ),
+                const SizedBox(height: 8),
+
                 TextField(
                   controller: titleCtrl,
                   decoration: const InputDecoration(labelText: 'Título'),
@@ -270,11 +297,11 @@ class AdminStreamsScreen extends ConsumerWidget {
                   controller: urlCtrl,
                   decoration: InputDecoration(
                     labelText: selectedType == 'video'
-                        ? 'URL de YouTube'
-                        : 'URL de Streaming',
+                        ? 'URL de Video (YouTube, Facebook, etc.)'
+                        : 'URL de Radio (Stream, YouTube, Facebook)',
                     hintText: selectedType == 'video'
-                        ? 'https://www.youtube.com/watch?v=...'
-                        : 'https://stream.radio.com/...',
+                        ? 'https://www.youtube.com/watch?v=... o Facebook'
+                        : 'https://stream.radio.com/... o enlace Live',
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -307,6 +334,8 @@ class AdminStreamsScreen extends ConsumerWidget {
                     title: titleCtrl.text,
                     youtubeUrl: urlCtrl.text,
                     description: descCtrl.text.isNotEmpty ? descCtrl.text : null,
+                    championshipId: activeChampionship?['id'],
+                    matchId: selectedMatchId,
                   );
                 } else {
                   await service.createRadioStream(
@@ -314,6 +343,8 @@ class AdminStreamsScreen extends ConsumerWidget {
                     streamUrl: urlCtrl.text,
                     description: descCtrl.text.isNotEmpty ? descCtrl.text : null,
                     frequency: double.tryParse(freqCtrl.text),
+                    championshipId: activeChampionship?['id'],
+                    matchId: selectedMatchId,
                   );
                 }
                 Navigator.pop(ctx);
@@ -322,7 +353,8 @@ class AdminStreamsScreen extends ConsumerWidget {
               child: const Text('Crear'),
             ),
           ],
-        ),
+        );
+        }
       ),
     );
   }
@@ -350,7 +382,7 @@ class AdminStreamsScreen extends ConsumerWidget {
               TextField(
                 controller: urlCtrl,
                 decoration: InputDecoration(
-                  labelText: stream['type'] == 'video' ? 'URL de YouTube' : 'URL de Streaming',
+                  labelText: stream['type'] == 'video' ? 'URL de Video' : 'URL de Streaming',
                 ),
               ),
               const SizedBox(height: 8),

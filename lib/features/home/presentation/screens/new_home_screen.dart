@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../shared/navigation/main_screen.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/live_tab_content.dart';
 import '../widgets/teams_tab_content.dart';
@@ -36,7 +37,11 @@ class _NewHomeScreenState extends ConsumerState<NewHomeScreen>
       body: SafeArea(
         child: Column(
           children: [
-            const CustomAppBar(),
+            CustomAppBar(
+              onProfileTap: () {
+                ref.read(mainScreenTabProvider.notifier).state = 2;
+              },
+            ),
             // Tab bar
             Container(
               color: AppColors.surface,

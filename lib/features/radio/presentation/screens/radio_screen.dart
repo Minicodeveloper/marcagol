@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../widgets/sound_wave.dart';
 import '../widgets/radio_dial.dart';
 import '../widgets/radio_controls.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 class RadioScreen extends StatefulWidget {
   final String? streamUrl;
@@ -25,6 +26,7 @@ class _RadioScreenState extends State<RadioScreen> {
   bool _isPlaying = false;
   double _currentFrequency = 107.7;
   YoutubePlayerController? _youtubeController;
+  WebViewController? _webController;
 
   @override
   void initState() {
@@ -34,19 +36,38 @@ class _RadioScreenState extends State<RadioScreen> {
     }
     
     // Check if it's a YouTube URL
-    if (widget.streamUrl != null && 
-        (widget.streamUrl!.contains('youtube.com') || widget.streamUrl!.contains('youtu.be'))) {
-      final videoId = YoutubePlayer.convertUrlToId(widget.streamUrl!);
-      if (videoId != null) {
-        _youtubeController = YoutubePlayerController(
-          initialVideoId: videoId,
-          flags: const YoutubePlayerFlags(
-            autoPlay: true,
-            mute: false,
-            hideControls: true,
-          ),
-        );
-        _isPlaying = true; // Empieza automáticamente
+    if (widget.streamUrl != null) {
+      final isYoutube = widget.streamUrl!.contains('youtube.com') || widget.streamUrl!.contains('youtu.be');
+      
+      if (isYoutube) {
+        final videoId = YoutubePlayer.convertUrlToId(widget.streamUrl!);
+        if (videoId != null) {
+          _youtubeController = YoutubePlayerController(
+            initialVideoId: videoId,
+            flags: const YoutubePlayerFlags(
+              autoPlay: true,
+              mute: false,
+              hideControls: true,
+            ),
+          );
+          _isPlaying = true;
+        }
+      } else {
+        // Not YouTube - Use WebView for Facebook, etc.
+        String finalUrl = widget.streamUrl!;
+        final isFacebook = finalUrl.contains('facebook.com') || finalUrl.contains('fb.watch') || finalUrl.contains('fb.gg');
+        if (isFacebook) {
+          // Normalize: replace mobile with desktop
+          finalUrl = finalUrl.replaceAll('m.facebook.com', 'www.facebook.com');
+          finalUrl = 'https://www.facebook.com/plugins/video.php?href=${Uri.encodeComponent(finalUrl)}&show_text=false&t=0&autoplay=true';
+        }
+
+        _webController = WebViewController()
+          ..setJavaScriptMode(JavaScriptMode.unrestricted)
+          ..setBackgroundColor(Colors.transparent)
+          ..setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+          ..loadRequest(Uri.parse(finalUrl));
+        _isPlaying = true;
       }
     }
   }
@@ -76,6 +97,14 @@ class _RadioScreenState extends State<RadioScreen> {
               child: YoutubePlayer(
                 controller: _youtubeController!,
               ),
+            ),
+          
+          // Invisible WebView player for Facebook, etc.
+          if (_webController != null)
+            SizedBox(
+              width: 1,
+              height: 1,
+              child: WebViewWidget(controller: _webController!),
             ),
           
           Column(
@@ -147,8 +176,12 @@ class _RadioScreenState extends State<RadioScreen> {
                 _isPlaying = !_isPlaying;
                 if (_isPlaying) {
                   _youtubeController?.play();
+                  if (_webController != null && widget.streamUrl != null) {
+                    _webController!.loadRequest(Uri.parse(widget.streamUrl!));
+                  }
                 } else {
                   _youtubeController?.pause();
+                  _webController?.loadRequest(Uri.parse('about:blank'));
                 }
               });
             },

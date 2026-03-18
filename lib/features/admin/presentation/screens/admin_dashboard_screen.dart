@@ -5,6 +5,7 @@ import '../../../../core/providers/providers.dart';
 import 'admin_championships_screen.dart';
 import 'admin_streams_screen.dart';
 import 'admin_ballots_screen.dart';
+import 'admin_bets_screen.dart';
 
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key});
@@ -123,6 +124,21 @@ class AdminDashboardScreen extends ConsumerWidget {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AdminBallotsScreen()),
+            ),
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // Apuestas
+          _buildAdminCard(
+            context,
+            icon: Icons.casino,
+            title: 'Apuestas',
+            subtitle: 'Gestionar apuestas, confirmar pagos, resolver resultados',
+            color: Colors.deepPurple,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminBetsScreen()),
             ),
           ),
         ],

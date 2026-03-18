@@ -5,6 +5,9 @@ import '../../features/home/presentation/screens/new_home_screen.dart';
 import '../../features/pools/presentation/screens/pool_betting_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 
+/// Provider to control the selected tab index from anywhere
+final mainScreenTabProvider = StateProvider<int>((ref) => 0);
+
 class MainScreen extends ConsumerStatefulWidget {
   const MainScreen({super.key});
 
@@ -13,8 +16,6 @@ class MainScreen extends ConsumerStatefulWidget {
 }
 
 class _MainScreenState extends ConsumerState<MainScreen> {
-  int _selectedIndex = 0;
-
   final List<Widget> _screens = const [
     NewHomeScreen(),
     PoolBettingScreen(),
@@ -23,8 +24,10 @@ class _MainScreenState extends ConsumerState<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedIndex = ref.watch(mainScreenTabProvider);
+    
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: _screens[selectedIndex],
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -37,8 +40,8 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           ],
         ),
         child: BottomNavigationBar(
-          currentIndex: _selectedIndex,
-          onTap: (index) => setState(() => _selectedIndex = index),
+          currentIndex: selectedIndex,
+          onTap: (index) => ref.read(mainScreenTabProvider.notifier).state = index,
           backgroundColor: AppColors.surface,
           selectedItemColor: AppColors.primary,
           unselectedItemColor: AppColors.textTertiary,

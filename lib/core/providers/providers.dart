@@ -253,3 +253,51 @@ final ballotEntriesByBallotProvider = StreamProvider.family<List<Map<String, dyn
         return list;
       });
 });
+
+// ============================================================
+// APUESTAS (BETTING)
+// ============================================================
+
+/// Todas las apuestas (admin)
+final allBetsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
+  final firestore = ref.watch(firestoreProvider);
+  return firestore
+      .collection('bets')
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+});
+
+/// Apuestas del usuario actual
+final myBetsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
+  final userId = ref.watch(authNotifierProvider);
+  final firestore = ref.watch(firestoreProvider);
+
+  if (userId == null) return Stream.value(<Map<String, dynamic>>[]);
+  
+  return firestore
+      .collection('bets')
+      .where('userId', isEqualTo: userId)
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+});
+
+/// Apuestas por partido
+final betsByMatchProvider = StreamProvider.family<List<Map<String, dynamic>>, String>((ref, matchId) {
+  final firestore = ref.watch(firestoreProvider);
+  return firestore
+      .collection('bets')
+      .where('matchId', isEqualTo: matchId)
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+});
+
+/// WhatsApp del admin
+final adminWhatsappProvider = FutureProvider<String?>((ref) async {
+  final firestore = ref.watch(firestoreProvider);
+  final doc = await firestore.collection('config').doc('admin').get();
+  return doc.data()?['whatsapp'];
+});
+

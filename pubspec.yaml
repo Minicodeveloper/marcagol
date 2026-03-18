@@ -48,6 +48,9 @@ dependencies:
   # YouTube Player
   youtube_player_flutter: ^9.0.3
 
+  # Web View (for Facebook Live, etc.)
+  webview_flutter: ^4.10.0
+
   # URL Launcher
   url_launcher: ^6.2.5
   just_audio: ^0.9.44

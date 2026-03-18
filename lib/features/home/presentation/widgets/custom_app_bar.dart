@@ -4,9 +4,12 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/providers/providers.dart';
 import '../../../auth/presentation/screens/login_screen.dart';
 import '../../../pools/presentation/screens/pool_betting_screen.dart';
+import '../../../profile/presentation/screens/profile_screen.dart';
 
 class CustomAppBar extends ConsumerWidget {
-  const CustomAppBar({super.key});
+  final VoidCallback? onProfileTap;
+  
+  const CustomAppBar({super.key, this.onProfileTap});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -75,7 +78,17 @@ class CustomAppBar extends ConsumerWidget {
           // Profile/Login icon
           GestureDetector(
             onTap: () {
-              if (!isLoggedIn) {
+              if (isLoggedIn) {
+                // Navigate to profile
+                if (onProfileTap != null) {
+                  onProfileTap!();
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                  );
+                }
+              } else {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const LoginScreen()),

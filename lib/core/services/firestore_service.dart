@@ -221,7 +221,10 @@ class FirestoreService {
         'home': 0,
         'away': 0,
       },
+      'goals': [], // { scorer, minute, team (home|away), period }
       'streams': [], // { title, url, type (video|radio) }
+      'bettingOdds': null, // { homeWin: 1.5, draw: 3.0, awayWin: 2.0, customOptions: [...] }
+      'bettingEnabled': false,
       'createdAt': FieldValue.serverTimestamp(),
     });
     return doc.id;
@@ -299,6 +302,22 @@ class FirestoreService {
     });
   }
 
+  Future<void> updateMatchGoals({
+    required String championshipId,
+    required String matchId,
+    required List<Map<String, dynamic>> goals,
+  }) async {
+    await _firestore
+        .collection('championships')
+        .doc(championshipId)
+        .collection('matches')
+        .doc(matchId)
+        .update({
+      'goals': goals,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   Future<void> updateMatchStreams({
     required String championshipId,
     required String matchId,
@@ -316,6 +335,140 @@ class FirestoreService {
   }
 
   // ============================================================
+  // APUESTAS (BETTING)
+  // ============================================================
+
+  /// Admin: configurar cuotas de apuestas para un partido
+  Future<void> updateMatchBettingOdds({
+    required String championshipId,
+    required String matchId,
+    required Map<String, dynamic> bettingOdds,
+    required bool bettingEnabled,
+  }) async {
+    await _firestore
+        .collection('championships')
+        .doc(championshipId)
+        .collection('matches')
+        .doc(matchId)
+        .update({
+      'bettingOdds': bettingOdds,
+      'bettingEnabled': bettingEnabled,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Usuario: colocar una apuesta
+  Future<String> placeBet({
+    required String championshipId,
+    required String matchId,
+    required String homeTeam,
+    required String awayTeam,
+    required String selection, // homeWin, draw, awayWin, custom:label
+    required double odds,
+    required double amount,
+  }) async {
+    final userId = await getLoggedInUserId();
+    if (userId == null) throw Exception('Debes iniciar sesión');
+
+    final userDoc = await _firestore.collection('users').doc(userId).get();
+    final userName = userDoc.data()?['displayName'] ?? 'Usuario';
+    final userPhone = userDoc.data()?['phone'] ?? '';
+
+    final betCode = 'BET-${_uuid.v4().substring(0, 6).toUpperCase()}';
+
+    final doc = _firestore.collection('bets').doc();
+    await doc.set({
+      'championshipId': championshipId,
+      'matchId': matchId,
+      'homeTeam': homeTeam,
+      'awayTeam': awayTeam,
+      'userId': userId,
+      'userName': userName,
+      'userPhone': userPhone,
+      'betCode': betCode,
+      'selection': selection,
+      'selectionLabel': _getSelectionLabel(selection, homeTeam, awayTeam),
+      'odds': odds,
+      'amount': amount,
+      'potentialWinnings': (amount * odds),
+      // Status flow: pending_payment → confirmed → won/lost → paid
+      'status': 'pending_payment',
+      'paymentConfirmed': false,
+      'resultSettled': false,
+      'payoutDelivered': false,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    return betCode;
+  }
+
+  String _getSelectionLabel(String selection, String homeTeam, String awayTeam) {
+    switch (selection) {
+      case 'homeWin': return 'Gana $homeTeam';
+      case 'draw': return 'Empate';
+      case 'awayWin': return 'Gana $awayTeam';
+      default:
+        if (selection.startsWith('custom:')) {
+          return selection.substring(7);
+        }
+        return selection;
+    }
+  }
+
+  /// Admin: confirmar pago recibido (activar apuesta)
+  Future<void> confirmBetPayment(String betId) async {
+    await _firestore.collection('bets').doc(betId).update({
+      'status': 'confirmed',
+      'paymentConfirmed': true,
+      'paymentConfirmedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Admin: marcar apuesta como ganadora o perdedora
+  Future<void> settleBet(String betId, bool isWinner) async {
+    await _firestore.collection('bets').doc(betId).update({
+      'status': isWinner ? 'won' : 'lost',
+      'resultSettled': true,
+      'isWinner': isWinner,
+      'settledAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Admin: marcar pago entregado al ganador
+  Future<void> markBetPaid(String betId) async {
+    await _firestore.collection('bets').doc(betId).update({
+      'status': 'paid',
+      'payoutDelivered': true,
+      'paidAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Admin: cancelar/rechazar apuesta
+  Future<void> cancelBet(String betId) async {
+    await _firestore.collection('bets').doc(betId).update({
+      'status': 'cancelled',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Admin: guardar/obtener WhatsApp
+  Future<void> updateAdminWhatsapp(String whatsapp) async {
+    await _firestore.collection('config').doc('admin').set({
+      'whatsapp': whatsapp,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<String?> getAdminWhatsapp() async {
+    final doc = await _firestore.collection('config').doc('admin').get();
+    return doc.data()?['whatsapp'];
+  }
+
+  // ============================================================
   // TRANSMISIONES
   // ============================================================
 
@@ -324,6 +477,7 @@ class FirestoreService {
     required String youtubeUrl,
     String? description,
     String? championshipId,
+    String? matchId,
   }) async {
     final doc = _firestore.collection('streams').doc();
     await doc.set({
@@ -331,6 +485,7 @@ class FirestoreService {
       'youtubeUrl': youtubeUrl,
       'description': description,
       'championshipId': championshipId,
+      'matchId': matchId,
       'type': 'video',
       'isActive': true,
       'createdAt': FieldValue.serverTimestamp(),
@@ -343,6 +498,8 @@ class FirestoreService {
     required String streamUrl,
     String? description,
     double? frequency,
+    String? championshipId,
+    String? matchId,
   }) async {
     final doc = _firestore.collection('streams').doc();
     await doc.set({
@@ -350,6 +507,8 @@ class FirestoreService {
       'streamUrl': streamUrl,
       'description': description,
       'frequency': frequency,
+      'championshipId': championshipId,
+      'matchId': matchId,
       'type': 'radio',
       'isActive': true,
       'createdAt': FieldValue.serverTimestamp(),
@@ -465,7 +624,6 @@ class FirestoreService {
 
     final ballot = await _firestore.collection('ballots').doc(ballotId).get();
     final ballotData = ballot.data()!;
-    final mode = ballotData['mode'] as String;
     final matches = List<Map<String, dynamic>>.from(ballotData['matches'] ?? []);
     final totalMatches = matches.length;
 
