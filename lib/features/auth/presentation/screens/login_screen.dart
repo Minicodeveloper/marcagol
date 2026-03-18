@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/providers/providers.dart';
 import '../../../../core/services/firestore_service.dart';
 import 'register_screen.dart';
 
@@ -28,40 +29,40 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
-    
+
     try {
       final service = FirestoreService();
-      await service.loginUser(
+      final userData = await service.loginUser(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
-      
+
+      // Actualizar el estado de autenticación en Riverpod
+      ref.read(authNotifierProvider.notifier).setLoggedIn(userData['uid']);
+
       if (mounted) {
-        Navigator.of(context).pop(true); // Return success
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ ¡Bienvenido ${userData['displayName']}!'),
+            backgroundColor: AppColors.liveGreen,
+          ),
+        );
+        Navigator.of(context).pop();
       }
     } catch (e) {
       setState(() {
-        _errorMessage = _getErrorMessage(e.toString());
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
       });
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
-  }
-
-  String _getErrorMessage(String error) {
-    if (error.contains('user-not-found')) return 'No existe una cuenta con este correo';
-    if (error.contains('wrong-password')) return 'Contraseña incorrecta';
-    if (error.contains('invalid-email')) return 'Correo inválido';
-    if (error.contains('too-many-requests')) return 'Demasiados intentos. Intenta más tarde';
-    if (error.contains('invalid-credential')) return 'Credenciales incorrectas';
-    return 'Error al iniciar sesión. Intenta de nuevo.';
   }
 
   @override
@@ -81,39 +82,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 20),
-                
                 // Logo
                 Center(
-                  child: Container(
-                    width: 80,
+                  child: Image.asset(
+                    'assets/images/logo.png',
                     height: 80,
-                    decoration: BoxDecoration(
-                      gradient: AppColors.primaryGradient,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.3),
-                          blurRadius: 20,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'MG',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
+                    fit: BoxFit.contain,
                   ),
                 ),
-                
+
                 const SizedBox(height: 24),
-                
+
                 const Text(
                   'Iniciar Sesión',
                   style: TextStyle(
@@ -125,16 +104,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Ingresa tus datos para participar',
+                  'Ingresa tus credenciales para acceder',
                   style: TextStyle(
                     fontSize: 14,
                     color: AppColors.textSecondary,
                   ),
                   textAlign: TextAlign.center,
                 ),
-                
+
                 const SizedBox(height: 32),
-                
+
+                // Error
                 if (_errorMessage != null)
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -144,12 +124,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                     ),
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(color: Colors.red, fontSize: 13),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(color: Colors.red, fontSize: 13),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                
+
                 // Email
                 TextFormField(
                   controller: _emailController,
@@ -169,7 +157,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                      borderSide: const BorderSide(color: AppColors.accent, width: 2),
                     ),
                   ),
                   validator: (v) {
@@ -178,9 +166,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     return null;
                   },
                 ),
-                
+
                 const SizedBox(height: 16),
-                
+
                 // Password
                 TextFormField(
                   controller: _passwordController,
@@ -192,7 +180,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       icon: Icon(
                         _obscurePassword ? Icons.visibility_off : Icons.visibility,
                       ),
-                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
                     ),
                     filled: true,
                     fillColor: AppColors.surface,
@@ -206,54 +195,66 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                      borderSide: const BorderSide(color: AppColors.accent, width: 2),
                     ),
                   ),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Ingresa tu contraseña';
-                    if (v.length < 6) return 'Mínimo 6 caracteres';
                     return null;
                   },
                 ),
-                
-                const SizedBox(height: 24),
-                
+
+                const SizedBox(height: 32),
+
                 // Login Button
                 SizedBox(
                   height: 52,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _login,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 2,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: AppColors.orangeGradient,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.accent.withValues(alpha: 0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _login,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text(
+                              'INICIAR SESIÓN',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1,
+                              ),
                             ),
-                          )
-                        : const Text(
-                            'INGRESAR',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1,
-                            ),
-                          ),
+                    ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 24),
-                
-                // Register Link
+
+                // Register link
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -265,15 +266,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       onTap: () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
-                            builder: (context) => const RegisterScreen(),
-                          ),
+                          MaterialPageRoute(builder: (_) => const RegisterScreen()),
                         );
                       },
                       child: const Text(
                         'Regístrate',
                         style: TextStyle(
-                          color: AppColors.primary,
+                          color: AppColors.accent,
                           fontWeight: FontWeight.bold,
                         ),
                       ),

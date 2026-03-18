@@ -266,6 +266,56 @@ class AdminBallotsScreen extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final title = ballot['title'] ?? 'Cartilla';
+                      // Auto-fill from championship matches
+                      final champId = ballot['championshipId'];
+                      if (champId == null) return;
+                      
+                      final snap = await FirebaseFirestore.instance
+                          .collection('championships')
+                          .doc(champId)
+                          .collection('matches')
+                          .get();
+                          
+                      final realMatches = {for (var doc in snap.docs) doc.id: doc.data()};
+                      
+                      setDialogState(() {
+                        for (int i = 0; i < matches.length; i++) {
+                          final matchId = matches[i]['matchId'];
+                          if (matchId != null && realMatches.containsKey(matchId)) {
+                            final realM = realMatches[matchId]!;
+                            final hScore = realM['homeScore'];
+                            final aScore = realM['awayScore'];
+                            
+                            if (hScore != null && aScore != null) {
+                              if (mode == 'result') {
+                                if (hScore > aScore) results['$i'] = 'LOCAL';
+                                else if (hScore == aScore) results['$i'] = 'EMPATE';
+                                else results['$i'] = 'VISITA';
+                              } else {
+                                results['$i'] = '$hScore-$aScore';
+                              }
+                            }
+                          }
+                        }
+                      });
+                      
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                           SnackBar(content: Text('Se cargaron los resultados listos. Favor confirmar.')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.sync),
+                    label: const Text('Cargar Resultados Reales'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   Text(
                     mode == 'result'
                         ? 'Selecciona el resultado de cada partido'
@@ -355,6 +405,14 @@ class AdminBallotsScreen extends ConsumerWidget {
                                   ),
                                 ),
                               ],
+                            ),
+                          if (mode == 'score' && results.containsKey(key))
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                'Resultado Actual: ${results[key]}',
+                                style: TextStyle(color: AppColors.liveGreen, fontWeight: FontWeight.bold),
+                              ),
                             ),
                         ],
                       ),

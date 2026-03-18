@@ -1,68 +1,133 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   static const _uuid = Uuid();
 
   // ============================================================
-  // AUTENTICACIÓN & USUARIOS
+  // UTILIDADES
   // ============================================================
 
-  /// Registrar usuario nuevo
-  Future<UserCredential> registerUser({
+  /// Hash SHA-256 de una contraseña
+  static String hashPassword(String password) {
+    final bytes = utf8.encode(password);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
+  }
+
+  // ============================================================
+  // AUTENTICACIÓN contra colección 'users'
+  // ============================================================
+
+  /// Login: busca en colección 'users' por email y compara hash
+  Future<Map<String, dynamic>> loginUser({
+    required String email,
+    required String password,
+  }) async {
+    final query = await _firestore
+        .collection('users')
+        .where('email', isEqualTo: email.trim().toLowerCase())
+        .limit(1)
+        .get();
+
+    if (query.docs.isEmpty) {
+      throw Exception('No existe una cuenta con este correo');
+    }
+
+    final userDoc = query.docs.first;
+    final userData = userDoc.data();
+    final storedHash = userData['passwordHash'] as String? ?? '';
+
+    final inputHash = hashPassword(password);
+
+    if (storedHash != inputHash) {
+      throw Exception('Contraseña incorrecta');
+    }
+
+    // Guardar sesión localmente
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('loggedInUserId', userDoc.id);
+
+    return {'uid': userDoc.id, ...userData};
+  }
+
+  /// Registrar usuario nuevo en la colección 'users'
+  Future<String> registerUser({
     required String email,
     required String password,
     required String displayName,
-    String role = 'client', // 'client' o 'admin'
+    String role = 'client',
+    String? dni,
+    String? phone,
   }) async {
-    final cred = await _auth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-    
-    await _firestore.collection('users').doc(cred.user!.uid).set({
-      'email': email,
+    // Verificar que no exista
+    final existing = await _firestore
+        .collection('users')
+        .where('email', isEqualTo: email.trim().toLowerCase())
+        .limit(1)
+        .get();
+
+    if (existing.docs.isNotEmpty) {
+      throw Exception('Ya existe una cuenta con este correo');
+    }
+
+    final doc = _firestore.collection('users').doc();
+    await doc.set({
+      'email': email.trim().toLowerCase(),
       'displayName': displayName,
+      'passwordHash': hashPassword(password),
       'role': role,
+      'dni': dni ?? '',
+      'phone': phone ?? '',
+      'balance': 0,
+      'isVerified': true,
       'createdAt': FieldValue.serverTimestamp(),
-      'isActive': true,
     });
-    
-    return cred;
+
+    // Auto-login después de registrar
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('loggedInUserId', doc.id);
+
+    return doc.id;
   }
 
-  /// Login
-  Future<UserCredential> loginUser({
-    required String email,
-    required String password,
-  }) async {
-    return await _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-  }
-
-  /// Logout
+  /// Cerrar sesión
   Future<void> logout() async {
-    await _auth.signOut();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('loggedInUserId');
   }
 
-  /// Obtener datos del usuario actual
+  /// Obtener ID del usuario logueado (de SharedPreferences)
+  static Future<String?> getLoggedInUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('loggedInUserId');
+  }
+
+  /// Obtener datos del usuario logueado desde Firestore
   Future<Map<String, dynamic>?> getCurrentUserData() async {
-    final user = _auth.currentUser;
-    if (user == null) return null;
-    final doc = await _firestore.collection('users').doc(user.uid).get();
-    return doc.exists ? {'uid': user.uid, ...doc.data()!} : null;
+    final userId = await getLoggedInUserId();
+    if (userId == null) return null;
+    final doc = await _firestore.collection('users').doc(userId).get();
+    return doc.exists ? {'uid': userId, ...doc.data()!} : null;
+  }
+
+  /// Stream de datos del usuario logueado
+  Stream<Map<String, dynamic>?> currentUserStream(String userId) {
+    return _firestore
+        .collection('users')
+        .doc(userId)
+        .snapshots()
+        .map((doc) => doc.exists ? {'uid': doc.id, ...doc.data()!} : null);
   }
 
   // ============================================================
   // CAMPEONATOS
   // ============================================================
 
-  /// Crear campeonato
   Future<String> createChampionship({
     required String name,
     required String description,
@@ -75,7 +140,7 @@ class FirestoreService {
       'description': description,
       'totalMatches': totalMatches,
       'imageUrl': imageUrl,
-      'status': 'active', // active, finished, cancelled
+      'status': 'active',
       'isActive': true,
       'isVisible': true,
       'createdAt': FieldValue.serverTimestamp(),
@@ -84,7 +149,6 @@ class FirestoreService {
     return doc.id;
   }
 
-  /// Actualizar visibilidad de campeonato
   Future<void> toggleChampionshipVisibility(String championshipId, bool isVisible) async {
     await _firestore.collection('championships').doc(championshipId).update({
       'isVisible': isVisible,
@@ -92,9 +156,7 @@ class FirestoreService {
     });
   }
 
-  /// Establecer campeonato activo (desactiva los demás)
   Future<void> setActiveChampionship(String championshipId) async {
-    // Desactivar todos
     final batch = _firestore.batch();
     final all = await _firestore.collection('championships')
         .where('isActive', isEqualTo: true)
@@ -102,7 +164,6 @@ class FirestoreService {
     for (final doc in all.docs) {
       batch.update(doc.reference, {'isActive': false});
     }
-    // Activar este
     batch.update(
       _firestore.collection('championships').doc(championshipId),
       {'isActive': true, 'status': 'active'},
@@ -110,7 +171,6 @@ class FirestoreService {
     await batch.commit();
   }
 
-  /// Finalizar campeonato
   Future<void> finishChampionship(String championshipId) async {
     await _firestore.collection('championships').doc(championshipId).update({
       'status': 'finished',
@@ -119,7 +179,6 @@ class FirestoreService {
     });
   }
 
-  /// Eliminar campeonato
   Future<void> deleteChampionship(String championshipId) async {
     await _firestore.collection('championships').doc(championshipId).delete();
   }
@@ -128,7 +187,6 @@ class FirestoreService {
   // PARTIDOS
   // ============================================================
 
-  /// Agregar partido a un campeonato
   Future<String> addMatch({
     required String championshipId,
     required String homeTeam,
@@ -153,12 +211,22 @@ class FirestoreService {
       'homeScore': null,
       'awayScore': null,
       'status': 'scheduled', // scheduled, live, finished
+      'timerState': {
+        'status': 'scheduled', // scheduled, playing, paused, finished
+        'period': '1H', // 1H, HT, 2H, E1, E2, PEN, FT
+        'periodStartTime': null,
+        'accumulatedMinutes': 0,
+      },
+      'penaltiesScore': {
+        'home': 0,
+        'away': 0,
+      },
+      'streams': [], // { title, url, type (video|radio) }
       'createdAt': FieldValue.serverTimestamp(),
     });
     return doc.id;
   }
 
-  /// Actualizar resultado de partido
   Future<void> updateMatchResult({
     required String championshipId,
     required String matchId,
@@ -179,7 +247,6 @@ class FirestoreService {
     });
   }
 
-  /// Actualizar estado del partido (scheduled, live, finished)
   Future<void> updateMatchStatus({
     required String championshipId,
     required String matchId,
@@ -196,11 +263,62 @@ class FirestoreService {
     });
   }
 
+  Future<void> updateMatchTimer({
+    required String championshipId,
+    required String matchId,
+    required Map<String, dynamic> timerState,
+  }) async {
+    await _firestore
+        .collection('championships')
+        .doc(championshipId)
+        .collection('matches')
+        .doc(matchId)
+        .update({
+      'timerState': timerState,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> updateMatchPenalties({
+    required String championshipId,
+    required String matchId,
+    required int homeScore,
+    required int awayScore,
+  }) async {
+    await _firestore
+        .collection('championships')
+        .doc(championshipId)
+        .collection('matches')
+        .doc(matchId)
+        .update({
+      'penaltiesScore': {
+        'home': homeScore,
+        'away': awayScore,
+      },
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> updateMatchStreams({
+    required String championshipId,
+    required String matchId,
+    required List<Map<String, dynamic>> streams,
+  }) async {
+    await _firestore
+        .collection('championships')
+        .doc(championshipId)
+        .collection('matches')
+        .doc(matchId)
+        .update({
+      'streams': streams,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   // ============================================================
   // TRANSMISIONES
   // ============================================================
 
-  /// Crear transmisión de video (YouTube)
   Future<String> createVideoStream({
     required String title,
     required String youtubeUrl,
@@ -220,7 +338,6 @@ class FirestoreService {
     return doc.id;
   }
 
-  /// Crear transmisión de radio
   Future<String> createRadioStream({
     required String title,
     required String streamUrl,
@@ -240,13 +357,11 @@ class FirestoreService {
     return doc.id;
   }
 
-  /// Actualizar transmisión
   Future<void> updateStream(String streamId, Map<String, dynamic> data) async {
     data['updatedAt'] = FieldValue.serverTimestamp();
     await _firestore.collection('streams').doc(streamId).update(data);
   }
 
-  /// Activar/desactivar transmisión
   Future<void> toggleStreamActive(String streamId, bool isActive) async {
     await _firestore.collection('streams').doc(streamId).update({
       'isActive': isActive,
@@ -254,7 +369,6 @@ class FirestoreService {
     });
   }
 
-  /// Eliminar transmisión
   Future<void> deleteStream(String streamId) async {
     await _firestore.collection('streams').doc(streamId).delete();
   }
@@ -263,13 +377,12 @@ class FirestoreService {
   // CARTILLAS / POZOS DE APUESTAS
   // ============================================================
 
-  /// Crear cartilla de apuestas
   Future<String> createBallot({
     required String championshipId,
     required String title,
     required double prizePool,
     required DateTime deadline,
-    required String mode, // 'result' (1X2) o 'score' (marcador exacto)
+    required String mode,
     required List<Map<String, dynamic>> matches,
   }) async {
     final doc = _firestore.collection('ballots').doc();
@@ -280,7 +393,7 @@ class FirestoreService {
       'deadline': Timestamp.fromDate(deadline),
       'mode': mode,
       'matches': matches,
-      'status': 'active', // active, closed, finished
+      'status': 'active',
       'participantCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -288,33 +401,36 @@ class FirestoreService {
     return doc.id;
   }
 
-  /// Participar en una cartilla (enviar predicciones)
   Future<String> submitBallotEntry({
     required String ballotId,
     required Map<String, dynamic> predictions,
     required String mode,
   }) async {
-    final user = _auth.currentUser;
-    if (user == null) throw Exception('Debes iniciar sesión');
-    
+    final userId = await getLoggedInUserId();
+    if (userId == null) throw Exception('Debes iniciar sesión');
+
     // Verificar que no haya participado ya
     final existing = await _firestore
         .collection('ballot_entries')
         .where('ballotId', isEqualTo: ballotId)
-        .where('userId', isEqualTo: user.uid)
+        .where('userId', isEqualTo: userId)
         .get();
-    
+
     if (existing.docs.isNotEmpty) {
       throw Exception('Ya participaste en esta cartilla');
     }
-    
+
+    // Obtener nombre del usuario
+    final userDoc = await _firestore.collection('users').doc(userId).get();
+    final userName = userDoc.data()?['displayName'] ?? 'Usuario';
+
     final code = 'MG-${_uuid.v4().substring(0, 6).toUpperCase()}';
-    
+
     final doc = _firestore.collection('ballot_entries').doc();
     await doc.set({
       'ballotId': ballotId,
-      'userId': user.uid,
-      'userName': user.displayName ?? user.email ?? 'Usuario',
+      'userId': userId,
+      'userName': userName,
       'predictions': predictions,
       'mode': mode,
       'participationCode': code,
@@ -322,16 +438,15 @@ class FirestoreService {
       'isWinner': false,
       'correctPredictions': 0,
     });
-    
+
     // Incrementar participantes
     await _firestore.collection('ballots').doc(ballotId).update({
       'participantCount': FieldValue.increment(1),
     });
-    
+
     return code;
   }
 
-  /// Cerrar cartilla (no más participaciones)
   Future<void> closeBallot(String ballotId) async {
     await _firestore.collection('ballots').doc(ballotId).update({
       'status': 'closed',
@@ -339,50 +454,42 @@ class FirestoreService {
     });
   }
 
-  /// Resolver cartilla: calcular ganadores
   Future<List<String>> resolveBallot({
     required String ballotId,
-    required Map<String, dynamic> results, // resultados reales
+    required Map<String, dynamic> results,
   }) async {
     final entries = await _firestore
         .collection('ballot_entries')
         .where('ballotId', isEqualTo: ballotId)
         .get();
-    
+
     final ballot = await _firestore.collection('ballots').doc(ballotId).get();
     final ballotData = ballot.data()!;
     final mode = ballotData['mode'] as String;
     final matches = List<Map<String, dynamic>>.from(ballotData['matches'] ?? []);
     final totalMatches = matches.length;
-    
+
     List<String> winnerIds = [];
-    
+
     final batch = _firestore.batch();
-    
+
     for (final entry in entries.docs) {
       final predictions = Map<String, dynamic>.from(entry.data()['predictions'] ?? {});
       int correct = 0;
-      
+
       for (final key in results.keys) {
-        if (mode == 'result') {
-          // Comparar resultado (LOCAL, EMPATE, VISITA)
-          if (predictions[key] == results[key]) correct++;
-        } else {
-          // Comparar marcador exacto
-          if (predictions[key] == results[key]) correct++;
-        }
+        if (predictions[key] == results[key]) correct++;
       }
-      
+
       final isWinner = correct == totalMatches;
       if (isWinner) winnerIds.add(entry.data()['userId']);
-      
+
       batch.update(entry.reference, {
         'correctPredictions': correct,
         'isWinner': isWinner,
       });
     }
-    
-    // Actualizar cartilla
+
     batch.update(_firestore.collection('ballots').doc(ballotId), {
       'status': 'finished',
       'winnerIds': winnerIds,
@@ -390,20 +497,17 @@ class FirestoreService {
       'resolvedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
-    
+
     await batch.commit();
     return winnerIds;
   }
 
-  /// Actualizar cartilla
   Future<void> updateBallot(String ballotId, Map<String, dynamic> data) async {
     data['updatedAt'] = FieldValue.serverTimestamp();
     await _firestore.collection('ballots').doc(ballotId).update(data);
   }
 
-  /// Eliminar cartilla
   Future<void> deleteBallot(String ballotId) async {
-    // Eliminar entradas primero
     final entries = await _firestore
         .collection('ballot_entries')
         .where('ballotId', isEqualTo: ballotId)

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/providers/providers.dart';
-import '../../../../core/services/firestore_service.dart';
 import '../../../auth/presentation/screens/login_screen.dart';
 import '../../../admin/presentation/screens/admin_dashboard_screen.dart';
 import '../widgets/menu_item_widget.dart';
@@ -44,7 +43,7 @@ class ProfileScreen extends ConsumerWidget {
                         children: [
                           CircleAvatar(
                             radius: 32,
-                            backgroundColor: isAdmin ? AppColors.adminOrange : AppColors.primary,
+                            backgroundColor: isAdmin ? AppColors.adminOrange : AppColors.accent,
                             child: Text(
                               (data?['displayName'] ?? 'U').substring(0, 1).toUpperCase(),
                               style: const TextStyle(
@@ -101,10 +100,11 @@ class ProfileScreen extends ConsumerWidget {
                     )
                   : Column(
                       children: [
-                        const CircleAvatar(
-                          radius: 32,
-                          backgroundColor: AppColors.background,
-                          child: Icon(Icons.person, size: 32, color: AppColors.textTertiary),
+                        // Logo
+                        Image.asset(
+                          'assets/images/logo.png',
+                          height: 60,
+                          fit: BoxFit.contain,
                         ),
                         const SizedBox(height: 16),
                         const Text(
@@ -120,23 +120,30 @@ class ProfileScreen extends ConsumerWidget {
                           style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
                         ),
                         const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const LoginScreen()),
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(double.infinity, 48),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: AppColors.orangeGradient,
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Text('INICIAR SESIÓN',
-                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(double.infinity, 48),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: const Text('INICIAR SESIÓN',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
                         ),
                       ],
                     ),
@@ -232,7 +239,7 @@ class ProfileScreen extends ConsumerWidget {
                     ),
                   );
                   if (confirm == true) {
-                    await FirestoreService().logout();
+                    await ref.read(authNotifierProvider.notifier).logout();
                   }
                 },
               ),

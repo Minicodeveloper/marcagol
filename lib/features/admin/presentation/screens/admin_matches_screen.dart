@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/providers/providers.dart';
 import '../../../../core/services/firestore_service.dart';
+import 'admin_match_control_screen.dart';
 
 class AdminMatchesScreen extends ConsumerWidget {
   final String championshipId;
@@ -28,11 +29,75 @@ class AdminMatchesScreen extends ConsumerWidget {
         ),
         foregroundColor: Colors.white,
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddMatchDialog(context),
-        backgroundColor: AppColors.adminOrange,
-        icon: const Icon(Icons.add),
-        label: const Text('Agregar Partido'),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'resetMatches',
+            onPressed: () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('¿Reiniciar todo?'),
+                  content: const Text('Esto devolverá TODOS los partidos a estado "Programado", eliminando puntajes, tiempo y transmisiones.'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.liveRed, foregroundColor: Colors.white),
+                      onPressed: () => Navigator.pop(ctx, true), 
+                      child: const Text('Sí, Reiniciar')
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirm == true) {
+                final snap = await FirebaseFirestore.instance
+                    .collection('championships')
+                    .doc(championshipId)
+                    .collection('matches')
+                    .get();
+                
+                for (var doc in snap.docs) {
+                  await doc.reference.update({
+                    'status': 'scheduled',
+                    'homeScore': 0,
+                    'awayScore': 0,
+                    'timerState': {
+                      'status': 'scheduled',
+                      'period': '1H',
+                      'accumulatedMinutes': 0,
+                      'periodStartTime': null,
+                    },
+                    'streams': [],
+                  });
+                }
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Todos los partidos fueron reiniciados')));
+                }
+              }
+            },
+            backgroundColor: AppColors.liveRed,
+            icon: const Icon(Icons.settings_backup_restore, color: Colors.white),
+            label: const Text('Reiniciar Todos', style: TextStyle(color: Colors.white)),
+          ),
+          const SizedBox(height: 16),
+          FloatingActionButton.extended(
+            heroTag: 'genMatches',
+            onPressed: () => _showGenerateMatchesDialog(context),
+            backgroundColor: AppColors.primary,
+            icon: const Icon(Icons.auto_awesome, color: Colors.white),
+            label: const Text('Generar Partidos', style: TextStyle(color: Colors.white)),
+          ),
+          const SizedBox(height: 16),
+          FloatingActionButton.extended(
+            heroTag: 'addMatch',
+            onPressed: () => _showAddMatchDialog(context),
+            backgroundColor: AppColors.adminOrange,
+            icon: const Icon(Icons.add, color: Colors.white),
+            label: const Text('Agregar Partido', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
       body: matches.when(
         data: (list) {
@@ -166,23 +231,23 @@ class AdminMatchesScreen extends ConsumerWidget {
                     // Action buttons
                     Row(
                       children: [
-                        if (status == 'scheduled')
-                          _buildActionButton('EN VIVO', AppColors.liveGreen, () {
-                            final service = FirestoreService();
-                            service.updateMatchStatus(
-                              championshipId: championshipId,
-                              matchId: match['id'],
-                              status: 'live',
-                            );
-                          }),
-                        if (status == 'live')
-                          _buildActionButton('FINALIZAR', AppColors.primary, () {
-                            _showResultDialog(context, match);
-                          }),
-                        if (status != 'finished')
-                          _buildActionButton('RESULTADO', Colors.blue, () {
-                            _showResultDialog(context, match);
-                          }),
+                        Expanded(
+                          child: _buildActionButton(
+                            'GESTIONAR PARTIDO', 
+                            AppColors.adminOrange, 
+                            () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => AdminMatchControlScreen(
+                                    championshipId: championshipId,
+                                    matchData: match,
+                                  ),
+                                ),
+                              );
+                            }
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -240,58 +305,7 @@ class AdminMatchesScreen extends ConsumerWidget {
     );
   }
 
-  void _showResultDialog(BuildContext context, Map<String, dynamic> match) {
-    final homeCtrl = TextEditingController(text: '${match['homeScore'] ?? ''}');
-    final awayCtrl = TextEditingController(text: '${match['awayScore'] ?? ''}');
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Ingresar Resultado'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(match['homeTeam'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-            TextField(
-              controller: homeCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Goles Local'),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            Text(match['awayTeam'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-            TextField(
-              controller: awayCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Goles Visitante'),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-          ElevatedButton(
-            onPressed: () async {
-              final home = int.tryParse(homeCtrl.text);
-              final away = int.tryParse(awayCtrl.text);
-              if (home == null || away == null) return;
-              
-              final service = FirestoreService();
-              await service.updateMatchResult(
-                championshipId: championshipId,
-                matchId: match['id'],
-                homeScore: home,
-                awayScore: away,
-              );
-              Navigator.pop(ctx);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _showAddMatchDialog(BuildContext context) {
     final homeCtrl = TextEditingController();
@@ -356,6 +370,83 @@ class AdminMatchesScreen extends ConsumerWidget {
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.adminOrange),
             child: const Text('Agregar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showGenerateMatchesDialog(BuildContext context) {
+    final teamsCtrl = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Generar Partidos Aleatorios'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Ingresa los equipos inscritos, uno por línea. Se emparejarán automáticamente. (Ej: para 14 partidos, ingresa 28 equipos).',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: teamsCtrl,
+                maxLines: 8,
+                decoration: const InputDecoration(
+                  labelText: 'Lista de Equipos',
+                  alignLabelWithHint: true,
+                  hintText: 'Equipo 1\nEquipo 2\nEquipo 3\nEquipo 4...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () async {
+              final lines = teamsCtrl.text.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+              if (lines.isEmpty || lines.length % 2 != 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Debes ingresar un número par de equipos.'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              
+              lines.shuffle(); // Generar enfrentamientos aleatorios
+              final service = FirestoreService();
+              
+              int matchNumber = 1;
+              for (int i = 0; i < lines.length; i += 2) {
+                await service.addMatch(
+                  championshipId: championshipId,
+                  homeTeam: lines[i],
+                  awayTeam: lines[i + 1],
+                  league: championshipName,
+                  matchNumber: matchNumber++,
+                  startTime: DateTime.now(),
+                );
+              }
+              
+              if (context.mounted) {
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('✅ Se generaron ${lines.length ~/ 2} partidos exitosamente.'),
+                    backgroundColor: AppColors.liveGreen,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            child: const Text('Generar Fixture', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),

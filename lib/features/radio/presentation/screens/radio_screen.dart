@@ -3,6 +3,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../widgets/sound_wave.dart';
 import '../widgets/radio_dial.dart';
 import '../widgets/radio_controls.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 class RadioScreen extends StatefulWidget {
   final String? streamUrl;
@@ -23,6 +24,7 @@ class RadioScreen extends StatefulWidget {
 class _RadioScreenState extends State<RadioScreen> {
   bool _isPlaying = false;
   double _currentFrequency = 107.7;
+  YoutubePlayerController? _youtubeController;
 
   @override
   void initState() {
@@ -30,6 +32,29 @@ class _RadioScreenState extends State<RadioScreen> {
     if (widget.frequency != null) {
       _currentFrequency = widget.frequency!;
     }
+    
+    // Check if it's a YouTube URL
+    if (widget.streamUrl != null && 
+        (widget.streamUrl!.contains('youtube.com') || widget.streamUrl!.contains('youtu.be'))) {
+      final videoId = YoutubePlayer.convertUrlToId(widget.streamUrl!);
+      if (videoId != null) {
+        _youtubeController = YoutubePlayerController(
+          initialVideoId: videoId,
+          flags: const YoutubePlayerFlags(
+            autoPlay: true,
+            mute: false,
+            hideControls: true,
+          ),
+        );
+        _isPlaying = true; // Empieza automáticamente
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _youtubeController?.dispose();
+    super.dispose();
   }
 
   @override
@@ -41,8 +66,20 @@ class _RadioScreenState extends State<RadioScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
-      body: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      body: Stack(
+        children: [
+          // Invisible YouTube player for audio
+          if (_youtubeController != null)
+            SizedBox(
+              width: 1,
+              height: 1,
+              child: YoutubePlayer(
+                controller: _youtubeController!,
+              ),
+            ),
+          
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const SizedBox(height: 20),
 
@@ -108,8 +145,12 @@ class _RadioScreenState extends State<RadioScreen> {
             onPlayPause: () {
               setState(() {
                 _isPlaying = !_isPlaying;
+                if (_isPlaying) {
+                  _youtubeController?.play();
+                } else {
+                  _youtubeController?.pause();
+                }
               });
-              // TODO: Integrate with actual audio player using widget.streamUrl
             },
             onBackward: () {},
             onForward: () {},
@@ -117,6 +158,8 @@ class _RadioScreenState extends State<RadioScreen> {
 
           const SizedBox(height: 20),
         ],
+      ),
+      ],
       ),
     );
   }

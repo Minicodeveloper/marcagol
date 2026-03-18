@@ -1,41 +1,63 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/firestore_service.dart';
 
 // ============================================================
 // PROVIDERS GLOBALES
 // ============================================================
 
-final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
-  return FirebaseAuth.instance;
-});
-
 final firestoreProvider = Provider<FirebaseFirestore>((ref) {
   return FirebaseFirestore.instance;
 });
 
-/// Stream del usuario autenticado
-final authStateProvider = StreamProvider<User?>((ref) {
-  return ref.watch(firebaseAuthProvider).authStateChanges();
+// ============================================================
+// AUTENTICACIÓN (contra colección 'users' de Firestore)
+// ============================================================
+
+/// State notifier para manejar la sesión del usuario
+class AuthNotifier extends StateNotifier<String?> {
+  AuthNotifier() : super(null);
+
+  /// Inicializar: leer de SharedPreferences
+  Future<void> init() async {
+    final userId = await FirestoreService.getLoggedInUserId();
+    state = userId;
+  }
+
+  /// Login exitoso
+  void setLoggedIn(String userId) {
+    state = userId;
+  }
+
+  /// Logout
+  Future<void> logout() async {
+    await FirestoreService().logout();
+    state = null;
+  }
+}
+
+final authNotifierProvider = StateNotifierProvider<AuthNotifier, String?>((ref) {
+  return AuthNotifier();
 });
 
-/// Datos del usuario desde Firestore (incluye rol)
+/// Provider para saber si está logueado
+final isLoggedInProvider = Provider<bool>((ref) {
+  final userId = ref.watch(authNotifierProvider);
+  return userId != null;
+});
+
+/// Datos del usuario actual desde Firestore (stream en tiempo real)
 final currentUserDataProvider = StreamProvider<Map<String, dynamic>?>((ref) {
-  final authState = ref.watch(authStateProvider);
-  final firestore = ref.watch(firestoreProvider);
+  final userId = ref.watch(authNotifierProvider);
+  if (userId == null) return Stream.value(null);
   
-  return authState.when(
-    data: (user) {
-      if (user == null) return Stream.value(null);
-      return firestore
-          .collection('users')
-          .doc(user.uid)
-          .snapshots()
-          .map((doc) => doc.exists ? {'uid': user.uid, ...doc.data()!} : null);
-    },
-    loading: () => Stream.value(null),
-    error: (_, __) => Stream.value(null),
-  );
+  final firestore = ref.watch(firestoreProvider);
+  return firestore
+      .collection('users')
+      .doc(userId)
+      .snapshots()
+      .map((doc) => doc.exists ? {'uid': doc.id, ...doc.data()!} : null);
 });
 
 /// Provider para saber si es admin
@@ -48,21 +70,11 @@ final isAdminProvider = Provider<bool>((ref) {
   );
 });
 
-/// Provider para saber si está logueado
-final isLoggedInProvider = Provider<bool>((ref) {
-  final authState = ref.watch(authStateProvider);
-  return authState.when(
-    data: (user) => user != null,
-    loading: () => false,
-    error: (_, __) => false,
-  );
-});
-
 // ============================================================
-// CAMPEONATOS (Eventos/Torneos)
+// CAMPEONATOS
 // ============================================================
 
-/// Todos los campeonatos (admin) - single field query, no index needed
+/// Todos los campeonatos (admin)
 final championshipsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final firestore = ref.watch(firestoreProvider);
   return firestore
@@ -72,7 +84,7 @@ final championshipsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
       .map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 });
 
-/// Solo campeonatos visibles (para clientes) - filter client side to avoid index
+/// Solo campeonatos visibles
 final visibleChampionshipsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final all = ref.watch(championshipsProvider);
   return all.when(
@@ -84,7 +96,7 @@ final visibleChampionshipsProvider = StreamProvider<List<Map<String, dynamic>>>(
   );
 });
 
-/// Campeonato activo actual - filter client side
+/// Campeonato activo actual
 final activeChampionshipProvider = StreamProvider<Map<String, dynamic>?>((ref) {
   final all = ref.watch(championshipsProvider);
   return all.when(
@@ -97,7 +109,7 @@ final activeChampionshipProvider = StreamProvider<Map<String, dynamic>?>((ref) {
   );
 });
 
-/// Campeonatos finalizados (historial) - filter client side
+/// Campeonatos finalizados (historial)
 final historicChampionshipsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final all = ref.watch(championshipsProvider);
   return all.when(
@@ -113,7 +125,6 @@ final historicChampionshipsProvider = StreamProvider<List<Map<String, dynamic>>>
 // PARTIDOS
 // ============================================================
 
-/// Partidos de un campeonato específico
 final matchesByChampionshipProvider = StreamProvider.family<List<Map<String, dynamic>>, String>((ref, championshipId) {
   final firestore = ref.watch(firestoreProvider);
   return firestore
@@ -126,10 +137,10 @@ final matchesByChampionshipProvider = StreamProvider.family<List<Map<String, dyn
 });
 
 // ============================================================
-// TRANSMISIONES (Video y Radio)
+// TRANSMISIONES
 // ============================================================
 
-/// Todas las transmisiones - single query, filter client side
+/// Todas las transmisiones
 final allStreamsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final firestore = ref.watch(firestoreProvider);
   return firestore
@@ -139,7 +150,7 @@ final allStreamsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
       .map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 });
 
-/// Transmisiones activas de video - filter from allStreams
+/// Transmisiones activas de video
 final liveVideoStreamsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final all = ref.watch(allStreamsProvider);
   return all.when(
@@ -151,7 +162,7 @@ final liveVideoStreamsProvider = StreamProvider<List<Map<String, dynamic>>>((ref
   );
 });
 
-/// Transmisiones activas de radio - filter from allStreams
+/// Transmisiones activas de radio
 final liveRadioStreamsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final all = ref.watch(allStreamsProvider);
   return all.when(
@@ -167,7 +178,6 @@ final liveRadioStreamsProvider = StreamProvider<List<Map<String, dynamic>>>((ref
 // CARTILLAS / POZOS
 // ============================================================
 
-/// Todas las cartillas (admin)
 final allBallotsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final firestore = ref.watch(firestoreProvider);
   return firestore
@@ -177,7 +187,6 @@ final allBallotsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
       .map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 });
 
-/// Cartillas activas - filter from allBallots
 final activeBallotProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final all = ref.watch(allBallotsProvider);
   return all.when(
@@ -189,7 +198,6 @@ final activeBallotProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   );
 });
 
-/// Cartilla específica por ID
 final ballotByIdProvider = StreamProvider.family<Map<String, dynamic>?, String>((ref, ballotId) {
   final firestore = ref.watch(firestoreProvider);
   return firestore
@@ -199,39 +207,32 @@ final ballotByIdProvider = StreamProvider.family<Map<String, dynamic>?, String>(
       .map((doc) => doc.exists ? {'id': doc.id, ...doc.data()!} : null);
 });
 
-/// Participaciones del usuario actual - single where
+/// Participaciones del usuario actual
 final myBallotEntriesProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
-  final authState = ref.watch(authStateProvider);
+  final userId = ref.watch(authNotifierProvider);
   final firestore = ref.watch(firestoreProvider);
+
+  if (userId == null) return Stream.value(<Map<String, dynamic>>[]);
   
-  return authState.when(
-    data: (user) {
-      if (user == null) return Stream.value(<Map<String, dynamic>>[]);
-      return firestore
-          .collection('ballot_entries')
-          .where('userId', isEqualTo: user.uid)
-          .snapshots()
-          .map((snap) {
-            final list = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-            // Sort client-side to avoid composite index
-            list.sort((a, b) {
-              final aTime = a['createdAt'];
-              final bTime = b['createdAt'];
-              if (aTime == null || bTime == null) return 0;
-              if (aTime is Timestamp && bTime is Timestamp) {
-                return bTime.compareTo(aTime);
-              }
-              return 0;
-            });
-            return list;
-          });
-    },
-    loading: () => Stream.value(<Map<String, dynamic>>[]),
-    error: (_, __) => Stream.value(<Map<String, dynamic>>[]),
-  );
+  return firestore
+      .collection('ballot_entries')
+      .where('userId', isEqualTo: userId)
+      .snapshots()
+      .map((snap) {
+        final list = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+        list.sort((a, b) {
+          final aTime = a['createdAt'];
+          final bTime = b['createdAt'];
+          if (aTime == null || bTime == null) return 0;
+          if (aTime is Timestamp && bTime is Timestamp) {
+            return bTime.compareTo(aTime);
+          }
+          return 0;
+        });
+        return list;
+      });
 });
 
-/// Participaciones en una cartilla específica
 final ballotEntriesByBallotProvider = StreamProvider.family<List<Map<String, dynamic>>, String>((ref, ballotId) {
   final firestore = ref.watch(firestoreProvider);
   return firestore
