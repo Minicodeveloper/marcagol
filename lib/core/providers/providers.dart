@@ -278,9 +278,20 @@ final myBetsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   return firestore
       .collection('bets')
       .where('userId', isEqualTo: userId)
-      .orderBy('createdAt', descending: true)
       .snapshots()
-      .map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+      .map((snap) {
+        final list = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+        list.sort((a, b) {
+          final aTime = a['createdAt'];
+          final bTime = b['createdAt'];
+          if (aTime == null || bTime == null) return 0;
+          if (aTime is Timestamp && bTime is Timestamp) {
+            return bTime.compareTo(aTime);
+          }
+          return 0;
+        });
+        return list;
+      });
 });
 
 /// Apuestas por partido
@@ -289,9 +300,20 @@ final betsByMatchProvider = StreamProvider.family<List<Map<String, dynamic>>, St
   return firestore
       .collection('bets')
       .where('matchId', isEqualTo: matchId)
-      .orderBy('createdAt', descending: true)
       .snapshots()
-      .map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+      .map((snap) {
+        final list = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+        list.sort((a, b) {
+          final aTime = a['createdAt'];
+          final bTime = b['createdAt'];
+          if (aTime == null || bTime == null) return 0;
+          if (aTime is Timestamp && bTime is Timestamp) {
+            return bTime.compareTo(aTime);
+          }
+          return 0;
+        });
+        return list;
+      });
 });
 
 /// WhatsApp del admin

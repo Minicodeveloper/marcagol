@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_colors.dart';
 
 class WebStreamPlayerScreen extends StatefulWidget {
@@ -21,10 +22,8 @@ class WebStreamPlayerScreen extends StatefulWidget {
 class _WebStreamPlayerScreenState extends State<WebStreamPlayerScreen> {
   late WebViewController _controller;
   bool _isLoading = true;
-  bool _hasError = false;
   String? _resolvedUrl;
   bool _isFullScreen = false;
-  String _currentMode = 'direct'; // direct, plugin, sdk
 
   @override
   void initState() {
@@ -52,7 +51,6 @@ class _WebStreamPlayerScreenState extends State<WebStreamPlayerScreen> {
         url.contains('l.facebook.com/');
   }
 
-  /// Resolves Facebook share/redirect links to final URL
   Future<String> _resolveFacebookShareUrl(String shareUrl) async {
     try {
       final client = http.Client();
@@ -88,129 +86,49 @@ class _WebStreamPlayerScreenState extends State<WebStreamPlayerScreen> {
     }
   }
 
+  /// Normaliza la URL de Facebook para usarla con el plugin de video embebido
   String _normalizeFacebookUrl(String url) {
     String cleanUrl = url.replaceAll('m.facebook.com', 'www.facebook.com');
+    // Quitar query params que puedan interferir
     try {
       final uri = Uri.parse(cleanUrl);
       cleanUrl = '${uri.scheme}://${uri.host}${uri.path}';
     } catch (_) {}
+    // Asegurar que tenga www
+    if (cleanUrl.contains('facebook.com') && !cleanUrl.contains('www.facebook.com')) {
+      cleanUrl = cleanUrl.replaceFirst('facebook.com', 'www.facebook.com');
+    }
     return cleanUrl;
   }
 
   Future<void> _initializeStream() async {
     setState(() {
       _isLoading = true;
-      _hasError = false;
     });
 
     String urlToUse = widget.url.trim();
 
     if (_isFacebookUrl(urlToUse)) {
-      // Resolve share links first
       if (_needsResolving(urlToUse)) {
         debugPrint('Resolving Facebook share URL: $urlToUse');
         urlToUse = await _resolveFacebookShareUrl(urlToUse);
         debugPrint('Resolved to: $urlToUse');
       }
       _resolvedUrl = urlToUse;
-
-      // DEFAULT: Load Facebook page directly in WebView (most reliable)
-      _loadDirectWebView(urlToUse);
-      _currentMode = 'direct';
+      _loadFacebookEmbedded(urlToUse);
     } else {
       _resolvedUrl = urlToUse;
       _loadDirectWebView(urlToUse);
-      _currentMode = 'direct';
     }
   }
 
-  /// MÉTODO PRINCIPAL: Carga la página de Facebook directamente como página web
-  /// Este es el método más confiable para Facebook Lives
-  void _loadDirectWebView(String url) {
-    // For Facebook, use the mobile URL for a cleaner experience
-    String loadUrl = url;
-    if (_isFacebookUrl(url)) {
-      // Convert to mobile version for better video experience on phones
-      loadUrl = url.replaceAll('www.facebook.com', 'm.facebook.com');
-    }
-
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.black)
-      ..setUserAgent(
-          'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36')
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (_) {
-            if (mounted) setState(() => _isLoading = true);
-          },
-          onPageFinished: (_) {
-            if (mounted) setState(() => _isLoading = false);
-            // For Facebook: inject JS to auto-click play and hide headers
-            if (_isFacebookUrl(url)) {
-              _controller.runJavaScript('''
-                // Hide Facebook navigation bars for cleaner view
-                try {
-                  var header = document.querySelector('[data-sigil="MTopBlueBarHeader"]');
-                  if (header) header.style.display = 'none';
-                  var footer = document.querySelector('#page_footer');
-                  if (footer) footer.style.display = 'none';
-                  // Try to click play button if visible
-                  var playBtn = document.querySelector('[data-sigil="playInlineVideo"]');
-                  if (playBtn) playBtn.click();
-                } catch(e) {}
-              ''');
-            }
-          },
-          onWebResourceError: (error) {
-            debugPrint('Web Error: ${error.description}');
-          },
-          onNavigationRequest: (request) {
-            return NavigationDecision.navigate;
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse(loadUrl));
-
-    _currentMode = 'direct';
-    if (mounted) setState(() {});
-  }
-
-  /// Facebook Plugin embed (video.php iframe)
-  void _loadFacebookPluginEmbed(String videoUrl) {
-    final normalizedUrl = _normalizeFacebookUrl(videoUrl);
+  /// Carga el video de Facebook usando el Facebook Video Plugin (embed oficial)
+  /// Este método NO requiere login porque usa la API oficial de embebido de Facebook
+  void _loadFacebookEmbedded(String url) {
+    final normalizedUrl = _normalizeFacebookUrl(url);
     final encodedUrl = Uri.encodeComponent(normalizedUrl);
-    final pluginUrl =
-        'https://www.facebook.com/plugins/video.php?href=$encodedUrl&show_text=false&t=0&autoplay=true&mute=false';
 
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.black)
-      ..setUserAgent(
-          'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36')
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (_) {
-            if (mounted) setState(() => _isLoading = true);
-          },
-          onPageFinished: (_) {
-            if (mounted) setState(() => _isLoading = false);
-          },
-          onWebResourceError: (error) {
-            debugPrint('Web Error (plugin): ${error.description}');
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse(pluginUrl));
-
-    _currentMode = 'plugin';
-    if (mounted) setState(() {});
-  }
-
-  /// Facebook SDK embed (fb-video div)
-  void _loadFacebookSDKEmbed(String videoUrl) {
-    final normalizedUrl = _normalizeFacebookUrl(videoUrl);
-
+    // HTML que usa el Facebook Video Plugin - forma oficial de embeber videos de FB
     final html = '''
 <!DOCTYPE html>
 <html>
@@ -219,49 +137,97 @@ class _WebStreamPlayerScreenState extends State<WebStreamPlayerScreen> {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
-    .container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
-    .fb-video { width: 100% !important; }
-    .fb-video > span, .fb-video > span > iframe { width: 100% !important; min-height: 250px; }
-    .fallback { display: none; color: #fff; text-align: center; padding: 20px; font-family: sans-serif; }
-    .fallback h3 { margin-bottom: 10px; }
-    .fallback a { display: inline-block; background: #1877f2; color: #fff; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; }
-    .loading { color: #fff; text-align: center; font-family: sans-serif; }
-    .spinner { width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.2); border-top: 3px solid #1877f2; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 12px; }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+    .video-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
+    .video-container iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+    .fb-video {
+      width: 100% !important;
+    }
+    .fb-video > span {
+      width: 100% !important;
+    }
+    .fb-video iframe {
+      width: 100% !important;
+    }
+    /* Fallback message */
+    .fallback {
+      display: none;
+      color: #fff;
+      text-align: center;
+      padding: 20px;
+      font-family: -apple-system, sans-serif;
+    }
+    .fallback h3 {
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+    .fallback p {
+      font-size: 13px;
+      color: #aaa;
+      margin-bottom: 15px;
+    }
+    .fallback a {
+      display: inline-block;
+      padding: 10px 24px;
+      background: #1877F2;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div id="loading" class="loading"><div class="spinner"></div><p>Cargando...</p></div>
-    <div id="fb-root"></div>
-    <div class="fb-video" data-href="$normalizedUrl" data-width="auto" data-allowfullscreen="true" data-autoplay="true" data-show-text="false"></div>
-    <div id="fallback" class="fallback">
-      <h3>📺 Transmisión en Vivo</h3>
-      <p style="font-size:13px;color:#aaa;margin-bottom:15px">No se pudo cargar el embed</p>
-      <a href="$normalizedUrl" target="_blank">Abrir en Facebook</a>
-    </div>
+  <div class="video-container">
+    <iframe
+      src="https://www.facebook.com/plugins/video.php?href=$encodedUrl&show_text=false&autoplay=true&allowFullScreen=true&mute=false"
+      style="width:100%;height:100%;border:none;overflow:hidden"
+      scrolling="no"
+      frameborder="0"
+      allowfullscreen="true"
+      allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share; fullscreen"
+      allowFullScreen="true">
+    </iframe>
+  </div>
+  <div class="fallback" id="fallback">
+    <h3>📺 Transmisión de Facebook</h3>
+    <p>Si el video no carga, ábrelo directamente en Facebook</p>
+    <a href="$normalizedUrl" target="_blank">Abrir en Facebook</a>
   </div>
   <script>
-    (function(d, s, id) {
-      var js, fjs = d.getElementsByTagName(s)[0];
-      if (d.getElementById(id)) return;
-      js = d.createElement(s); js.id = id;
-      js.src = "https://connect.facebook.net/es_LA/sdk.js#xfbml=1&version=v21.0";
-      js.onload = function() { document.getElementById('loading').style.display = 'none'; };
-      js.onerror = function() {
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('fallback').style.display = 'block';
-      };
-      fjs.parentNode.insertBefore(js, fjs);
-    }(document, 'script', 'facebook-jssdk'));
+    // Si el iframe falla por alguna razón, mostrar fallback después de 10 segundos
     setTimeout(function() {
-      var fbVideo = document.querySelector('.fb-video > span');
-      if (!fbVideo || fbVideo.children.length === 0) {
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('fallback').style.display = 'block';
+      var iframe = document.querySelector('iframe');
+      if (iframe) {
+        try {
+          // Check if iframe loaded (cross-origin will throw)
+          var iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+          if (!iframeDoc || iframeDoc.body.innerHTML.length < 100) {
+            document.querySelector('.video-container').style.display = 'none';
+            document.getElementById('fallback').style.display = 'block';
+          }
+        } catch(e) {
+          // Cross-origin - iframe loaded something (which is good)
+        }
       }
-    }, 8000);
+    }, 10000);
   </script>
 </body>
 </html>
@@ -281,16 +247,61 @@ class _WebStreamPlayerScreenState extends State<WebStreamPlayerScreen> {
             if (mounted) setState(() => _isLoading = false);
           },
           onWebResourceError: (error) {
-            debugPrint('Web Error (SDK): ${error.description}');
+            debugPrint('FB Embed Error: ${error.description}');
           },
           onNavigationRequest: (request) {
+            final reqUrl = request.url;
+            // Permitir navegación al plugin de Facebook y al video
+            if (reqUrl.contains('facebook.com/plugins/') ||
+                reqUrl.contains('facebook.com/v') ||
+                reqUrl.contains('fbcdn.net') ||
+                reqUrl.contains('fbsbx.com') ||
+                reqUrl.startsWith('about:') ||
+                reqUrl.startsWith('data:')) {
+              return NavigationDecision.navigate;
+            }
+            // Bloquear redirects a login
+            if (reqUrl.contains('/login') || reqUrl.contains('login.php')) {
+              return NavigationDecision.prevent;
+            }
+            // Bloquear app stores
+            if (reqUrl.contains('play.google.com') ||
+                reqUrl.contains('apps.apple.com') ||
+                reqUrl.contains('intent://')) {
+              return NavigationDecision.prevent;
+            }
+            // Permitir todo lo demás dentro del iframe
             return NavigationDecision.navigate;
           },
         ),
       )
       ..loadHtmlString(html);
 
-    _currentMode = 'sdk';
+    if (mounted) setState(() {});
+  }
+
+  /// Direct web loading for non-Facebook URLs
+  void _loadDirectWebView(String url) {
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.black)
+      ..setUserAgent(
+          'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36')
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (_) {
+            if (mounted) setState(() => _isLoading = true);
+          },
+          onPageFinished: (_) {
+            if (mounted) setState(() => _isLoading = false);
+          },
+          onWebResourceError: (error) {
+            debugPrint('Web Error: ${error.description}');
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(url));
+
     if (mounted) setState(() {});
   }
 
@@ -311,12 +322,11 @@ class _WebStreamPlayerScreenState extends State<WebStreamPlayerScreen> {
     }
   }
 
-  String _getModeLabel(String mode) {
-    switch (mode) {
-      case 'direct': return 'Página Web';
-      case 'plugin': return 'Plugin Embed';
-      case 'sdk': return 'SDK Embed';
-      default: return mode;
+  Future<void> _openInExternalApp() async {
+    final url = _resolvedUrl ?? widget.url;
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -353,7 +363,7 @@ class _WebStreamPlayerScreenState extends State<WebStreamPlayerScreen> {
     final isFb = _isFacebookUrl(widget.url);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(widget.title, style: const TextStyle(fontSize: 14)),
         backgroundColor: Colors.black87,
@@ -363,94 +373,8 @@ class _WebStreamPlayerScreenState extends State<WebStreamPlayerScreen> {
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
             tooltip: 'Recargar',
-            onPressed: () {
-              final url = _resolvedUrl ?? widget.url;
-              switch (_currentMode) {
-                case 'direct':
-                  _loadDirectWebView(url);
-                  break;
-                case 'plugin':
-                  _loadFacebookPluginEmbed(url);
-                  break;
-                case 'sdk':
-                  _loadFacebookSDKEmbed(url);
-                  break;
-              }
-            },
+            onPressed: _initializeStream,
           ),
-          if (isFb)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, size: 20),
-              tooltip: 'Cambiar modo de reproducción',
-              onSelected: (value) {
-                final url = _resolvedUrl ?? widget.url;
-                switch (value) {
-                  case 'direct':
-                    _loadDirectWebView(url);
-                    break;
-                  case 'plugin':
-                    _loadFacebookPluginEmbed(url);
-                    break;
-                  case 'sdk':
-                    _loadFacebookSDKEmbed(url);
-                    break;
-                }
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'direct',
-                  child: Row(
-                    children: [
-                      Icon(Icons.web, size: 18, color: _currentMode == 'direct' ? AppColors.liveGreen : Colors.green),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Página Web (Recomendado)',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: _currentMode == 'direct' ? FontWeight.bold : FontWeight.normal,
-                          color: _currentMode == 'direct' ? AppColors.liveGreen : null,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'plugin',
-                  child: Row(
-                    children: [
-                      Icon(Icons.video_library, size: 18, color: _currentMode == 'plugin' ? AppColors.liveGreen : Colors.orange),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Plugin Embed',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: _currentMode == 'plugin' ? FontWeight.bold : FontWeight.normal,
-                          color: _currentMode == 'plugin' ? AppColors.liveGreen : null,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'sdk',
-                  child: Row(
-                    children: [
-                      Icon(Icons.smart_display, size: 18, color: _currentMode == 'sdk' ? AppColors.liveGreen : Colors.blue),
-                      const SizedBox(width: 8),
-                      Text(
-                        'SDK Embed',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: _currentMode == 'sdk' ? FontWeight.bold : FontWeight.normal,
-                          color: _currentMode == 'sdk' ? AppColors.liveGreen : null,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          // Live badge
           Container(
             margin: const EdgeInsets.only(right: 8),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -475,113 +399,103 @@ class _WebStreamPlayerScreenState extends State<WebStreamPlayerScreen> {
       ),
       body: Column(
         children: [
-          // Video player area
-          Expanded(
-            flex: 3,
-            child: Stack(
-              children: [
-                if (_hasError)
-                  _buildErrorWidget()
-                else
+          // Video area - 16:9 ratio
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Container(
+              color: Colors.black,
+              child: Stack(
+                children: [
                   WebViewWidget(controller: _controller),
-                if (_isLoading)
-                  Container(
-                    color: Colors.black,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(color: isFb ? const Color(0xFF1877F2) : AppColors.primary),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Conectando con la transmisión...',
-                            style: TextStyle(color: Colors.white70, fontSize: 13),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          // Bottom info section
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
-              color: Color(0xFF1A1A2E),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  widget.title,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
+                  if (_isLoading)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.liveRed.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.live_tv, size: 14, color: AppColors.liveRed),
-                          SizedBox(width: 4),
-                          Text('Transmisión en Vivo',
-                              style: TextStyle(color: AppColors.liveRed, fontSize: 12, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (isFb)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1877F2).withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Row(
+                      color: Colors.black,
+                      child: Center(
+                        child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.facebook, size: 14, color: Color(0xFF1877F2)),
-                            SizedBox(width: 4),
-                            Text('Facebook Live',
-                                style: TextStyle(color: Color(0xFF1877F2), fontSize: 12, fontWeight: FontWeight.w600)),
+                            CircularProgressIndicator(
+                              color: isFb ? const Color(0xFF1877F2) : AppColors.primary,
+                            ),
+                            const SizedBox(height: 12),
+                            const Text('Conectando con la transmisión...',
+                                style: TextStyle(color: Colors.white70, fontSize: 13)),
                           ],
                         ),
                       ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        _getModeLabel(_currentMode),
-                        style: const TextStyle(color: Colors.white54, fontSize: 10),
-                      ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ),
 
-                // Action buttons
-                Row(
+          // App UI below video
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: Color(0xFF1A1A2E),
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
+                    Text(
+                      widget.title,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Badges
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: AppColors.liveRed.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.circle, size: 8, color: AppColors.liveRed),
+                              SizedBox(width: 6),
+                              Text('Transmisión en Vivo',
+                                  style: TextStyle(color: AppColors.liveRed, fontSize: 13, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (isFb)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1877F2).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.facebook, size: 14, color: Color(0xFF1877F2)),
+                                SizedBox(width: 6),
+                                Text('Facebook Live',
+                                    style: TextStyle(color: Color(0xFF1877F2), fontSize: 13, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Fullscreen
+                    SizedBox(
+                      width: double.infinity,
                       child: ElevatedButton.icon(
                         onPressed: _toggleFullScreen,
-                        icon: const Icon(Icons.fullscreen, size: 20),
-                        label: const Text('Pantalla Completa'),
+                        icon: const Icon(Icons.fullscreen, size: 22),
+                        label: const Text('Pantalla Completa',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
@@ -590,63 +504,55 @@ class _WebStreamPlayerScreenState extends State<WebStreamPlayerScreen> {
                         ),
                       ),
                     ),
-                    if (isFb) ...[
-                      const SizedBox(width: 10),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          final url = _resolvedUrl ?? widget.url;
-                          if (_currentMode == 'direct') {
-                            _loadFacebookPluginEmbed(url);
-                          } else {
-                            _loadDirectWebView(url);
-                          }
-                        },
-                        icon: Icon(_currentMode == 'direct' ? Icons.smart_display : Icons.web, size: 18),
-                        label: Text(_currentMode == 'direct' ? 'Embed' : 'Web', style: const TextStyle(fontSize: 13)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1877F2),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    const SizedBox(height: 12),
+
+                    // Open externally
+                    if (isFb)
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _openInExternalApp,
+                          icon: const Icon(Icons.open_in_new, size: 20),
+                          label: const Text('Abrir en Facebook', style: TextStyle(fontSize: 14)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF1877F2),
+                            side: const BorderSide(color: Color(0xFF1877F2)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
                         ),
                       ),
-                    ],
+                    const SizedBox(height: 12),
+
+                    // Info
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, size: 18, color: Colors.white54),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              isFb
+                                  ? 'Toca ▶ para reproducir. Si no carga, usa "Abrir en Facebook".'
+                                  : 'Toca el video para reproducir.',
+                              style: const TextStyle(color: Colors.white54, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildErrorWidget() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, color: Colors.red, size: 48),
-            const SizedBox(height: 16),
-            const Text(
-              'No se pudo cargar la transmisión',
-              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: _initializeStream,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Reintentar'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
